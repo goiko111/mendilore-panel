@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 import { LineChart as LineChartIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState, StatCard } from "@/components/page-header";
