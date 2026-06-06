@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 import { Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/page-header";
