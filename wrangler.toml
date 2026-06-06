@@ -1,6 +1,8 @@
 # Cloudflare Pages — Casa Mendilore panel
-# Habilita Node.js compat para Next.js 15 SSR runtime
 name = "mendilore-panel"
 compatibility_date = "2026-06-05"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
+
+[build]
+command = "npx pnpm install --no-frozen-lockfile && npx pnpm pages:build"
