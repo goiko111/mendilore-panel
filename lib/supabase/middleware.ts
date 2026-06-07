@@ -3,12 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
+const SUPABASE_URL = "https://itaftpmelcswvphzqgkc.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_e-zLObL9GxPumv9ZRE4-Wg_cVX72YTB";
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    SUPABASE_URL,
+    SUPABASE_PUBLISHABLE_KEY,
     {
       cookies: {
         getAll() {
