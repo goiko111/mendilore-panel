@@ -24,6 +24,15 @@ export default async function MetricasPage() {
     .lte("fecha", today.toISOString().slice(0, 10))
     .order("fecha", { ascending: true });
 
+  // KPIs 30 días año anterior (comparativa)
+  const desdeYA = new Date(today.getTime() - 395 * 86400_000).toISOString().slice(0, 10);
+  const hastaYA = new Date(today.getTime() - 365 * 86400_000).toISOString().slice(0, 10);
+  const { data: metricasYA } = await supabase
+    .from("metricas_dia")
+    .select("fecha, occupancy_pct, adr, ingresos_dia, habitaciones_ocupadas")
+    .gte("fecha", desdeYA)
+    .lte("fecha", hastaYA);
+
   // Datos para el gráfico (rango extendido)
   const { data: metricasChart } = await supabase
     .from("metricas_dia")
@@ -39,6 +48,22 @@ export default async function MetricasPage() {
     ? (metricas30.reduce((sum, m) => sum + Number(m.occupancy_pct ?? 0), 0) / metricas30.length)
     : 0;
   const adrMedio = totalNoches > 0 ? totalIngresos / totalNoches : 0;
+
+  // Comparativa año anterior
+  const totalIngresosYA = (metricasYA ?? []).reduce((sum, m) => sum + Number(m.ingresos_dia ?? 0), 0);
+  const totalNochesYA = (metricasYA ?? []).reduce((sum, m) => sum + Number(m.habitaciones_ocupadas ?? 0), 0);
+  const occupancyYA = metricasYA?.length
+    ? (metricasYA.reduce((sum, m) => sum + Number(m.occupancy_pct ?? 0), 0) / metricasYA.length)
+    : 0;
+  const adrYA = totalNochesYA > 0 ? totalIngresosYA / totalNochesYA : 0;
+
+  function varPct(now: number, before: number): string | null {
+    if (!before || before === 0) return null;
+    const d = ((now - before) / before) * 100;
+    const sign = d > 0 ? "+" : "";
+    return `${sign}${d.toFixed(1)}%`;
+  }
+  const hayComparativa = totalNochesYA > 0;
 
   // Recortar el rango del gráfico a la ventana con datos relevantes
   // (primer día con reserva → último día con reserva + 7d de margen)
@@ -90,12 +115,39 @@ export default async function MetricasPage() {
         description="KPIs de los últimos 30 días · Casa Mendilore"
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint="Últimos 30 días" />
-        <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={`${totalNoches} noches vendidas`} />
-        <StatCard label="Ingresos 30 días" value={formatCurrency(totalIngresos)} hint="Suma diaria" />
-        <StatCard label="Noches vendidas" value={String(totalNoches)} hint="De 180 disponibles (6 hab × 30 días)" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : "Últimos 30 días"} />
+        <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={hayComparativa ? `${varPct(adrMedio, adrYA) ?? "—"} vs año anterior` : `${totalNoches} noches vendidas`} />
+        <StatCard label="Ingresos 30 días" value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} />
+        <StatCard label="Noches vendidas" value={String(totalNoches)} hint={hayComparativa ? `${varPct(totalNoches, totalNochesYA) ?? "—"} vs año anterior` : "De 180 disponibles (6 hab × 30 días)"} />
       </div>
+
+      {!hayComparativa && (
+        <div className="text-xs text-muted-foreground italic mb-6 px-1">
+          Comparativa año anterior aparecerá cuando haya histórico de 365 días en BD.
+        </div>
+      )}
+
+      {/* GA4 — visitas web (sólo si está configurado) */}
+      {process.env.NEXT_PUBLIC_LOOKER_STUDIO_EMBED && (
+        <div className="bg-card border border-border rounded-xl p-5 mb-6">
+          <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Datos en directo de GA4 vía Looker Studio · sesiones, usuarios, top pages, fuente de tráfico
+          </p>
+          <div className="rounded-lg overflow-hidden border border-border">
+            <iframe
+              src={process.env.NEXT_PUBLIC_LOOKER_STUDIO_EMBED}
+              width="100%"
+              height="480"
+              frameBorder="0"
+              allowFullScreen
+              sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+              title="GA4 Looker Studio Casa Mendilore"
+            />
+          </div>
+        </div>
+      )}
 
       {!porSemana || porSemana.length === 0 ? (
         <EmptyState
