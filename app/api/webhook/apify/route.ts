@@ -53,16 +53,27 @@ function todayPlus(days: number): string {
 }
 
 async function fetchApifyDataset(actorRunId: string, token: string): Promise<{ items: ApifyItem[]; datasetId: string }> {
+  // Use Authorization header (more reliable than query string)
+  const authHeaders = { Authorization: `Bearer ${token}` };
+
   // 1. Get run metadata to find defaultDatasetId
-  const runRes = await fetch(`https://api.apify.com/v2/actor-runs/${actorRunId}?token=${token}`);
-  if (!runRes.ok) throw new Error(`Apify run fetch failed: ${runRes.status}`);
+  const runUrl = `https://api.apify.com/v2/actor-runs/${actorRunId}`;
+  const runRes = await fetch(runUrl, { headers: authHeaders });
+  if (!runRes.ok) {
+    const errBody = await runRes.text();
+    throw new Error(`Apify run fetch failed: ${runRes.status} ${errBody.slice(0, 200)}`);
+  }
   const runJson: any = await runRes.json();
   const datasetId = runJson?.data?.defaultDatasetId;
-  if (!datasetId) throw new Error("No defaultDatasetId in run metadata");
+  if (!datasetId) throw new Error(`No defaultDatasetId in run metadata: ${JSON.stringify(runJson).slice(0, 200)}`);
 
-  // 2. Fetch dataset items
-  const dsRes = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true&format=json`);
-  if (!dsRes.ok) throw new Error(`Apify dataset fetch failed: ${dsRes.status}`);
+  // 2. Fetch dataset items (uses same auth)
+  const dsUrl = `https://api.apify.com/v2/datasets/${datasetId}/items?clean=true&format=json`;
+  const dsRes = await fetch(dsUrl, { headers: authHeaders });
+  if (!dsRes.ok) {
+    const errBody = await dsRes.text();
+    throw new Error(`Apify dataset fetch failed: ${dsRes.status} ${errBody.slice(0, 200)}`);
+  }
   const items: ApifyItem[] = await dsRes.json();
   return { items, datasetId };
 }
@@ -94,15 +105,22 @@ export async function POST(request: Request) {
     mode = "apify-native";
     apifyRunId = body.eventData.actorRunId;
     const apifyToken = process.env.APIFY_TOKEN;
+    const tokenPresent = !!apifyToken;
+    const tokenLen = apifyToken?.length ?? 0;
+    const tokenPrefix = apifyToken ? apifyToken.slice(0, 12) + "..." : "(missing)";
     if (!apifyToken) {
-      return NextResponse.json({ error: "APIFY_TOKEN not configured" }, { status: 500 });
+      return NextResponse.json({ error: "APIFY_TOKEN not configured", tokenPresent, tokenLen }, { status: 500 });
     }
     try {
       const fetched = await fetchApifyDataset(apifyRunId, apifyToken);
       items = fetched.items;
     } catch (err) {
       return NextResponse.json(
-        { error: "Failed to fetch dataset from Apify", details: err instanceof Error ? err.message : "Unknown" },
+        {
+          error: "Failed to fetch dataset from Apify",
+          details: err instanceof Error ? err.message : "Unknown",
+          debug: { tokenPresent, tokenLen, tokenPrefix, apifyRunId }
+        },
         { status: 500 }
       );
     }
