@@ -52,6 +52,20 @@ function todayPlus(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Booking item URLs include `checkin=YYYY-MM-DD&checkout=YYYY-MM-DD` in the query string.
+ * Extracting them lets us store the REAL search dates rather than a hardcoded today+30/+33.
+ * Returns null if any of the two dates is missing or malformed.
+ */
+function extractDatesFromItem(item: ApifyItem): { checkIn: string; checkOut: string } | null {
+  const url = typeof item.url === "string" ? item.url : "";
+  if (!url) return null;
+  const checkin = url.match(/[?&]checkin=(\d{4}-\d{2}-\d{2})/)?.[1];
+  const checkout = url.match(/[?&]checkout=(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (!checkin || !checkout) return null;
+  return { checkIn: checkin, checkOut: checkout };
+}
+
 async function fetchApifyDataset(actorRunId: string, token: string): Promise<{ items: ApifyItem[]; datasetId: string }> {
   // Use Authorization header (more reliable than query string)
   const authHeaders = { Authorization: `Bearer ${token}` };
@@ -93,11 +107,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // 3. Detect mode and obtain items + apifyRunId + checkIn/checkOut
+  // 3. Detect mode and obtain items + apifyRunId + fallback checkIn/checkOut
   let items: ApifyItem[];
   let apifyRunId: string;
-  let checkIn: string;
-  let checkOut: string;
+  let fallbackCheckIn: string;
+  let fallbackCheckOut: string;
   let mode: "apify-native" | "legacy-make";
 
   if (body?.eventData?.actorRunId) {
@@ -124,16 +138,17 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
-    // checkIn/checkOut = today + 30 / today + 33 (matches actor input)
-    checkIn = todayPlus(30);
-    checkOut = todayPlus(33);
+    // Fallback: today + 30 / today + 33 (matches default Apify Schedule input).
+    // Si el item.url contiene checkin/checkout, usamos esas fechas en su lugar (extractDatesFromItem).
+    fallbackCheckIn = todayPlus(30);
+    fallbackCheckOut = todayPlus(33);
   } else if (Array.isArray(body?.items)) {
     // LEGACY MAKE
     mode = "legacy-make";
     apifyRunId = String(body.apifyRunId ?? "manual");
     items = body.items;
-    checkIn = String(body.checkIn ?? todayPlus(30));
-    checkOut = String(body.checkOut ?? todayPlus(33));
+    fallbackCheckIn = String(body.checkIn ?? todayPlus(30));
+    fallbackCheckOut = String(body.checkOut ?? todayPlus(33));
   } else {
     return NextResponse.json(
       { error: "Invalid payload: expected eventData.actorRunId (Apify native) or items array (Make legacy)" },
@@ -185,11 +200,17 @@ export async function POST(request: Request) {
       .replace(/^€$/, "EUR")
       .slice(0, 3);
 
+    // Las fechas reales vienen en el query string de la URL del item de Booking
+    // (ej. ?checkin=2026-10-05&checkout=2026-10-08). Si no están, caemos al fallback.
+    const fechasReales = extractDatesFromItem(item);
+    const checkInItem = fechasReales?.checkIn ?? fallbackCheckIn;
+    const checkOutItem = fechasReales?.checkOut ?? fallbackCheckOut;
+
     rows.push({
       competidor_id,
       fecha_snapshot: fechaSnapshot,
-      check_in: checkIn,
-      check_out: checkOut,
+      check_in: checkInItem,
+      check_out: checkOutItem,
       precio_total: typeof item.price === "number" ? item.price : null,
       moneda,
       disponible: item.available !== false && item.price !== null && item.price !== undefined,
@@ -214,14 +235,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Upsert failed", details: errUpsert.message, mode, skipped }, { status: 500 });
   }
 
+  // Devuelve también el rango de fechas reales detectadas en los items (debug útil)
+  const fechasDetectadas = Array.from(new Set(rows.map((r) => `${r.check_in}/${r.check_out}`)));
+
   return NextResponse.json({
     mode,
     inserted: count ?? rows.length,
     skipped,
     apifyRunId,
     fechaSnapshot,
-    checkIn,
-    checkOut
+    fechasDetectadas,
+    fallback: { checkIn: fallbackCheckIn, checkOut: fallbackCheckOut }
   });
 }
 
