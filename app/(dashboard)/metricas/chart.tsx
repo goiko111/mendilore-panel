@@ -10,7 +10,6 @@ type Row = {
 };
 
 export function MetricasChart({ data }: { data: Row[] }) {
-  // Asegurarnos de que todos los valores son numbers reales (no strings de PostgREST).
   const formatted = data.map((r) => ({
     fechaLabel: new Date(r.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "short" }),
     occupancy_pct: Number(r.occupancy_pct) || 0,
@@ -21,10 +20,11 @@ export function MetricasChart({ data }: { data: Row[] }) {
   return (
     <div className="w-full h-80">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={formatted} margin={{ top: 10, right: 30, bottom: 5, left: 0 }}>
+        <LineChart data={formatted} margin={{ top: 10, right: 40, bottom: 5, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
           <XAxis dataKey="fechaLabel" tick={{ fontSize: 11, fill: "#78716c" }} />
-          <YAxis tick={{ fontSize: 11, fill: "#78716c" }} />
+          <YAxis yAxisId="pct" orientation="left" tick={{ fontSize: 11, fill: "#78716c" }} domain={[0, 100]} unit="%" />
+          <YAxis yAxisId="eur" orientation="right" tick={{ fontSize: 11, fill: "#78716c" }} unit="€" />
           <Tooltip
             contentStyle={{
               backgroundColor: "#fafaf9",
@@ -38,9 +38,9 @@ export function MetricasChart({ data }: { data: Row[] }) {
             }}
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line type="monotone" dataKey="occupancy_pct" name="Ocupación %" stroke="#7a6b4f" strokeWidth={2} dot={{ r: 3 }} />
-          <Line type="monotone" dataKey="adr" name="ADR €" stroke="#1f7a5a" strokeWidth={2} dot={{ r: 3 }} />
-          <Line type="monotone" dataKey="revpar" name="RevPAR €" stroke="#8a4f2a" strokeWidth={2} dot={{ r: 3 }} />
+          <Line yAxisId="pct" type="monotone" dataKey="occupancy_pct" name="Ocupación %" stroke="#7a6b4f" strokeWidth={2} dot={{ r: 3, fill: "#7a6b4f" }} activeDot={{ r: 5 }} />
+          <Line yAxisId="eur" type="monotone" dataKey="adr" name="ADR €" stroke="#1f7a5a" strokeWidth={2} dot={{ r: 3, fill: "#1f7a5a" }} activeDot={{ r: 5 }} />
+          <Line yAxisId="eur" type="monotone" dataKey="revpar" name="RevPAR €" stroke="#8a4f2a" strokeWidth={2} dot={{ r: 3, fill: "#8a4f2a" }} activeDot={{ r: 5 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
