@@ -14,6 +14,7 @@
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "edge";
+export const dynamic = "force-dynamic";
 
 function csvEscape(value: unknown): string {
   if (value === null || value === undefined) return "";
