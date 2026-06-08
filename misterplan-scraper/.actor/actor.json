@@ -1,0 +1,27 @@
+{
+  "actorSpecification": 1,
+  "name": "misterplan-scraper",
+  "title": "MisterPlan Reservas Scraper — Casa Mendilore",
+  "description": "Logs into MisterPlan TCloudV2 intranet, scrapes the Planning view for the next N months, extracts each reservation modal detail, normalizes data to Casa Mendilore schema and POSTs to the panel webhook.",
+  "version": "1.0",
+  "buildTag": "latest",
+  "input": "./input_schema.json",
+  "dockerfile": "../Dockerfile",
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "title": "Reservas extraídas",
+      "views": {
+        "overview": {
+          "title": "Resumen",
+          "transformation": {
+            "fields": ["id_reserva", "habitacion", "fecha_in", "fecha_out", "huesped_nombre", "importe_total", "estado_cobro", "canal"]
+          },
+          "display": {
+            "component": "table"
+          }
+        }
+      }
+    }
+  }
+}
