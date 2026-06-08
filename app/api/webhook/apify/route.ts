@@ -58,7 +58,16 @@ function todayPlus(days: number): string {
  * Returns null if any of the two dates is missing or malformed.
  */
 function extractDatesFromItem(item: ApifyItem): { checkIn: string; checkOut: string } | null {
-  const url = typeof item.url === "string" ? item.url : "";
+  // Preferimos los campos estructurados que el actor ya devuelve (más robusto a cambios de URL)
+  const ci = typeof item.checkInDate === "string" ? item.checkInDate : "";
+  const co = typeof item.checkOutDate === "string" ? item.checkOutDate : "";
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (dateRe.test(ci) && dateRe.test(co)) return { checkIn: ci, checkOut: co };
+
+  // Fallback: parsear de la URL (que también el actor expone con ?checkin=...&checkout=...)
+  const url = typeof item.url === "string" ? item.url
+    : typeof item.startUrlOrQuery === "string" ? item.startUrlOrQuery
+    : "";
   if (!url) return null;
   const checkin = url.match(/[?&]checkin=(\d{4}-\d{2}-\d{2})/)?.[1];
   const checkout = url.match(/[?&]checkout=(\d{4}-\d{2}-\d{2})/)?.[1];
