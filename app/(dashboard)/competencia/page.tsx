@@ -1,5 +1,3 @@
-export const runtime = 'edge';
-
 import Link from "next/link";
 import { ExternalLink, TrendingUp } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
@@ -18,16 +16,23 @@ export default async function CompetenciaPage() {
     .eq("activo", true)
     .order("nombre");
 
-  // último snapshot por competidor
-  const { data: ultimosPrecios } = await supabase
+  // Todos los snapshots, ordenados por fecha_snapshot DESC y check_in DESC para que
+  // el snapshot más reciente (con tie-breaker estable) sea el primero por competidor.
+  const { data: todosPrecios } = await supabase
     .from("precios_competidores_dia")
     .select("competidor_id, fecha_snapshot, check_in, check_out, precio_total, precio_por_noche, moneda, disponible, rating, rating_label, reviews_count")
-    .order("fecha_snapshot", { ascending: false });
+    .order("fecha_snapshot", { ascending: false })
+    .order("check_in", { ascending: false });
 
-  // mapa competidor_id → último snapshot
-  const ultimosMap = new Map<string, any>();
-  ultimosPrecios?.forEach((p) => {
-    if (!ultimosMap.has(p.competidor_id)) ultimosMap.set(p.competidor_id, p);
+  // Dos mapas: el último snapshot (sea o no disponible) y el último disponible (precio conocido).
+  // Si el último snapshot está sold out, mostramos también el último con precio como referencia histórica.
+  const ultimoMap = new Map<string, any>();
+  const ultimoDisponibleMap = new Map<string, any>();
+  todosPrecios?.forEach((p) => {
+    if (!ultimoMap.has(p.competidor_id)) ultimoMap.set(p.competidor_id, p);
+    if (p.disponible && p.precio_por_noche && !ultimoDisponibleMap.has(p.competidor_id)) {
+      ultimoDisponibleMap.set(p.competidor_id, p);
+    }
   });
 
   return (
@@ -51,14 +56,19 @@ export default async function CompetenciaPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {competidores.map((c) => {
-            const ultimo = ultimosMap.get(c.id);
+            const ultimo = ultimoMap.get(c.id);
+            const ultimoDisp = ultimoDisponibleMap.get(c.id);
+            // Prioridad de visualización: si el último snapshot tiene precio, mostrarlo.
+            // Si está sold out pero existe otro snapshot disponible, mostrarlo como "último conocido".
+            const principal = ultimo?.disponible && ultimo?.precio_por_noche ? ultimo : (ultimoDisp ?? ultimo);
+            const mostrarSoldOutActual = principal && !principal.disponible;
             return (
               <div key={c.id} className="bg-card border border-border rounded-xl p-5 flex flex-col">
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div>
                     <h3 className="font-semibold text-foreground">{c.nombre}</h3>
                     <div className="text-xs text-muted-foreground mt-0.5">
-                      {c.estrellas ? "★".repeat(c.estrellas) : ""} {ultimo?.rating ? `· ${ultimo.rating} ${ultimo.rating_label ?? ""}` : ""}
+                      {c.estrellas ? "★".repeat(c.estrellas) : ""} {principal?.rating ? `· ${principal.rating} ${principal.rating_label ?? ""}` : ""}
                     </div>
                   </div>
                   <Link href={c.booking_url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
@@ -66,25 +76,32 @@ export default async function CompetenciaPage() {
                   </Link>
                 </div>
 
-                {ultimo ? (
+                {principal ? (
                   <div className="space-y-2 flex-1">
                     <div>
-                      <div className="text-xs text-muted-foreground">Precio último snapshot</div>
+                      <div className="text-xs text-muted-foreground">
+                        {mostrarSoldOutActual ? "Último precio conocido" : "Precio último snapshot"}
+                      </div>
                       <div className="text-xl font-semibold text-foreground">
-                        {ultimo.disponible && ultimo.precio_por_noche
-                          ? `${formatCurrency(ultimo.precio_por_noche, ultimo.moneda)}/noche`
+                        {principal.disponible && principal.precio_por_noche
+                          ? `${formatCurrency(principal.precio_por_noche, principal.moneda)}/noche`
                           : "Sold out"}
                       </div>
-                      {ultimo.disponible && ultimo.precio_total && (
-                        <div className="text-xs text-muted-foreground">Total {formatCurrency(ultimo.precio_total, ultimo.moneda)}</div>
+                      {principal.disponible && principal.precio_total && (
+                        <div className="text-xs text-muted-foreground">Total {formatCurrency(principal.precio_total, principal.moneda)}</div>
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground border-t border-border pt-2">
-                      Para fechas {formatDate(ultimo.check_in, { day: "numeric", month: "short" })} → {formatDate(ultimo.check_out, { day: "numeric", month: "short" })}
+                      Para fechas {formatDate(principal.check_in, { day: "numeric", month: "short" })} → {formatDate(principal.check_out, { day: "numeric", month: "short" })}
                       <br />
-                      Scrapeado: {formatDate(ultimo.fecha_snapshot)}
-                      {ultimo.reviews_count ? ` · ${ultimo.reviews_count} reviews` : ""}
+                      Scrapeado: {formatDate(principal.fecha_snapshot)}
+                      {principal.reviews_count ? ` · ${principal.reviews_count} reviews` : ""}
                     </div>
+                    {ultimo && ultimo !== principal && !ultimo.disponible && (
+                      <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-md px-2 py-1.5">
+                        Sold out para {formatDate(ultimo.check_in, { day: "numeric", month: "short" })} → {formatDate(ultimo.check_out, { day: "numeric", month: "short" })}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground italic flex-1">
