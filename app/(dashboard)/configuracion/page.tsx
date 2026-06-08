@@ -2,9 +2,10 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+import Link from "next/link";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
-import { ShieldCheck, FileText } from "lucide-react";
+import { ShieldCheck, FileText, ChevronRight } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 export const metadata = { title: "Configuración" };
@@ -96,6 +97,7 @@ export default async function ConfiguracionPage() {
                     <th className="text-left font-medium px-4 py-2">Versión</th>
                     <th className="text-left font-medium px-4 py-2">Hash SHA-256</th>
                     <th className="text-left font-medium px-4 py-2">Publicado</th>
+                    <th className="w-8"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -107,12 +109,21 @@ export default async function ConfiguracionPage() {
                           {tiposLegibles[d.tipo] ?? d.tipo}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-foreground">{d.titulo}</td>
+                      <td className="px-4 py-2.5 text-foreground">
+                        <Link href={`/configuracion/legales/${d.id}`} className="hover:underline">
+                          {d.titulo}
+                        </Link>
+                      </td>
                       <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">{d.version}</td>
                       <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs" title={d.hash_sha256}>
                         {d.hash_sha256.slice(0, 12)}…{d.hash_sha256.slice(-6)}
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground">{formatDate(d.publicado_en)}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        <Link href={`/configuracion/legales/${d.id}`} className="inline-flex items-center text-muted-foreground hover:text-foreground">
+                          <ChevronRight className="size-4" />
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
