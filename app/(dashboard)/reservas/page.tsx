@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 
-import { CalendarRange } from "lucide-react";
+import Link from "next/link";
+import { CalendarRange, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -20,6 +21,15 @@ export default async function ReservasPage() {
       <PageHeader
         title="Reservas"
         description={`${reservas?.length ?? 0} reservas cargadas`}
+        actions={
+          <Link
+            href="/api/export/reservas"
+            className="inline-flex items-center gap-1.5 text-xs font-medium bg-foreground text-background hover:bg-foreground/90 px-3 py-1.5 rounded-md transition"
+          >
+            <Download className="size-3.5" />
+            Exportar CSV
+          </Link>
+        }
       />
 
       {!reservas || reservas.length === 0 ? (
