@@ -129,7 +129,7 @@ export default async function MetricasPage() {
       )}
 
       {/* GA4 — visitas web (sólo si está configurado) */}
-      {process.env.NEXT_PUBLIC_LOOKER_STUDIO_EMBED && (
+      {true && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
           <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
           <p className="text-xs text-muted-foreground mb-4">
@@ -137,7 +137,7 @@ export default async function MetricasPage() {
           </p>
           <div className="rounded-lg overflow-hidden border border-border">
             <iframe
-              src={process.env.NEXT_PUBLIC_LOOKER_STUDIO_EMBED}
+              src="https://datastudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/y2b0F"
               width="100%"
               height="480"
               frameBorder="0"
