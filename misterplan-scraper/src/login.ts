@@ -155,6 +155,6 @@ export async function ensureLoggedIn(
     throw new Error(`MISTERPLAN_LOGIN_FAILED: ${result.error}`);
   }
 
-  await saveSession(page, page, true);
+  await saveSession(store, page, true);
   return { refreshed: true };
 }
