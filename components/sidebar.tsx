@@ -29,9 +29,14 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
 
   return (
     <aside className="w-60 shrink-0 border-r border-border bg-card flex flex-col">
-      <div className="px-5 py-5 border-b border-border">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground">Panel</div>
-        <div className="text-base font-semibold text-foreground">Casa Mendilore</div>
+      <div className="px-5 py-5 border-b border-border flex items-center gap-3">
+        <div className="size-10 rounded-full bg-gradient-to-br from-emerald-700 to-emerald-900 flex items-center justify-center text-white font-serif text-lg shrink-0" aria-label="Casa Mendilore">
+          M
+        </div>
+        <div className="min-w-0">
+          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Panel</div>
+          <div className="text-sm font-semibold text-foreground leading-tight">Casa Mendilore</div>
+        </div>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-0.5">
