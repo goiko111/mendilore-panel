@@ -1,0 +1,69 @@
+{
+  "title": "MisterPlan Reservas Scraper input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "username": {
+      "title": "Usuario MisterPlan",
+      "type": "string",
+      "description": "Usuario de login en la intranet TCloudV2",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "password": {
+      "title": "Contraseña MisterPlan",
+      "type": "string",
+      "description": "Contraseña asociada al usuario",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "webhookUrl": {
+      "title": "URL del webhook del panel",
+      "type": "string",
+      "description": "Endpoint POST que recibirá el payload",
+      "editor": "textfield",
+      "default": "https://panel.mendilore.com/api/webhook/misterplan",
+      "prefill": "https://panel.mendilore.com/api/webhook/misterplan"
+    },
+    "webhookSecret": {
+      "title": "Secret del webhook",
+      "type": "string",
+      "description": "Header x-misterplan-secret que el panel valida. Debe coincidir con MISTERPLAN_WEBHOOK_SECRET en CF Pages.",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "monthsAhead": {
+      "title": "Meses a escrapear",
+      "type": "integer",
+      "description": "Número de meses (a partir del actual) a recorrer en el Planning",
+      "default": 4,
+      "minimum": 1,
+      "maximum": 12,
+      "editor": "number"
+    },
+    "monthsBack": {
+      "title": "Meses hacia atrás",
+      "type": "integer",
+      "description": "Meses pasados a incluir (útil en el primer run para histórico)",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 24,
+      "editor": "number"
+    },
+    "headless": {
+      "title": "Headless",
+      "type": "boolean",
+      "description": "Ejecutar el navegador en modo headless. Desactivar sólo en debug local.",
+      "default": true,
+      "editor": "checkbox"
+    },
+    "debug": {
+      "title": "Debug mode",
+      "type": "boolean",
+      "description": "Activa logs extra + screenshots por paso. Útil para refinar selectores.",
+      "default": false,
+      "editor": "checkbox"
+    }
+  },
+  "required": ["username", "password", "webhookSecret"]
+}
