@@ -27,9 +27,19 @@ import { createAdminClient } from "@/lib/supabase/server";
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
-const DESTINATARIOS = ["info@mendilore.com", "mendilore@mendilore.com"];
+/**
+ * Resend free sin dominio verificado solo permite enviar al email owner de la cuenta.
+ * Cuando se verifique el dominio mendilore.com en Resend (RESEND_DOMAIN_VERIFICADO=true),
+ * usaremos ambos destinatarios y envío desde noreply@mendilore.com.
+ */
+const DESTINATARIOS_VERIFICADO = ["info@mendilore.com", "mendilore@mendilore.com"];
+const DESTINATARIOS_FREE = ["info@mendilore.com"];  // owner de la cuenta Resend
 const FROM_FALLBACK = "Casa Mendilore <onboarding@resend.dev>";
 const FROM_PRODUCCION = "Casa Mendilore <noreply@mendilore.com>";
+
+const DESTINATARIOS = process.env.RESEND_DOMAIN_VERIFICADO === "true"
+  ? DESTINATARIOS_VERIFICADO
+  : DESTINATARIOS_FREE;
 
 type ReservaAlerta = {
   id: string;
