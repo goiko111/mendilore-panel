@@ -2,7 +2,7 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { ShieldCheck, FileText } from "lucide-react";
 import { formatDate } from "@/lib/utils";
@@ -14,15 +14,16 @@ export default async function ConfiguracionPage() {
   const { data: { user } } = await supabase.auth.getUser();
   const { data: perfil } = await supabase.from("perfiles").select("*").eq("id", user?.id ?? "").maybeSingle();
 
-  // Documentos legales vigentes (Fase 3)
-  const { data: documentosLegales } = await supabase
+  // Documentos legales vigentes (Fase 3). Usamos admin client porque los textos
+  // legales NO son PII de huéspedes y queremos evitar problemas de RLS en SSR Edge.
+  const admin = createAdminClient();
+  const { data: documentosLegales } = await admin
     .from("documentos_legales")
     .select("id, tipo, version, titulo, hash_sha256, vigente, publicado_en")
     .eq("vigente", true)
     .order("tipo");
 
-  // Conteo de aceptaciones (proof of life Fase 3)
-  const { count: aceptacionesCount } = await supabase
+  const { count: aceptacionesCount } = await admin
     .from("aceptaciones_condiciones")
     .select("*", { count: "exact", head: true });
 
