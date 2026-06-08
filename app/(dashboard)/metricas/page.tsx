@@ -128,26 +128,41 @@ export default async function MetricasPage() {
         </div>
       )}
 
-      {/* GA4 — visitas web (sólo si está configurado) */}
-      {true && (
-        <div className="bg-card border border-border rounded-xl p-5 mb-6">
-          <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Datos en directo de GA4 vía Looker Studio · sesiones, usuarios, top pages, fuente de tráfico
-          </p>
-          <div className="rounded-lg overflow-hidden border border-border">
-            <iframe
-              src="https://datastudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/y2b0F"
-              width="100%"
-              height="480"
-              frameBorder="0"
-              allowFullScreen
-              sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-              title="GA4 Looker Studio Casa Mendilore"
-            />
+      {/* GA4 — visitas web (Looker Studio embed) */}
+      <div className="bg-card border border-border rounded-xl p-5 mb-6">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
+            <p className="text-xs text-muted-foreground">
+              Datos en directo de GA4 vía Looker Studio · sesiones, usuarios, top pages, fuente de tráfico
+            </p>
           </div>
+          <a
+            href="https://lookerstudio.google.com/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap"
+          >
+            Abrir en Looker Studio ↗
+          </a>
         </div>
-      )}
+        <div className="rounded-lg overflow-hidden border border-border bg-muted/30">
+          <iframe
+            src="https://lookerstudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/y2b0F"
+            width="100%"
+            height="480"
+            frameBorder="0"
+            allowFullScreen
+            sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
+            title="GA4 Looker Studio Casa Mendilore"
+            referrerPolicy="no-referrer-when-downgrade"
+          />
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-3 italic">
+          Si el iframe muestra &ldquo;No has iniciado sesión&rdquo;, asegúrate de tener una cuenta Google abierta en este navegador
+          (Gmail / YouTube). Es una limitación de Looker Studio. Como alternativa, abre el informe en una pestaña nueva con el enlace de arriba.
+        </p>
+      </div>
 
       {!porSemana || porSemana.length === 0 ? (
         <EmptyState
