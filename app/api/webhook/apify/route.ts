@@ -1,122 +1,153 @@
 /**
  * POST /api/webhook/apify
  * --------------------------------------------------------------------------
- * Recibe el output del Booking Scraper (voyager/booking-scraper) que invoca
- * Make.com cada lunes 07:00 y escribe los precios snapshot a la tabla
- * `precios_competidores_dia`.
+ * Recibe el output del Booking Scraper (voyager/booking-scraper) y escribe
+ * los precios snapshot a la tabla `precios_competidores_dia`.
  *
- * Seguridad:
- *   - Header `x-apify-secret` debe coincidir con APIFY_WEBHOOK_SECRET (env).
- *   - Usa service_role para escribir saltándose RLS (precios son INSERT-only
- *     desde server).
+ * Soporta DOS modos de payload:
  *
- * Payload esperado:
- *   {
- *     "apifyRunId": "bB8ZhVXUftcQFNSzs",
- *     "checkIn": "2026-07-05",
- *     "checkOut": "2026-07-08",
- *     "items": [
- *       {
- *         "name": "Hotel Palacio Obispo",
- *         "url": "https://www.booking.com/hotel/es/obispo.html",
- *         "stars": 3,
- *         "rating": 8.8,
- *         "ratingLabel": "Fabulous",
- *         "reviewsCount": 1403,
- *         "price": 743.18,
- *         "currency": "US$",
- *         "available": true
- *       },
- *       ...
- *     ]
- *   }
+ *   1) APIFY NATIVO (recomendado — Apify Schedule + webhook nativo):
+ *      {
+ *        "userId": "...",
+ *        "createdAt": "...",
+ *        "eventType": "ACTOR.RUN.SUCCEEDED",
+ *        "eventData": { "actorId": "...", "actorRunId": "..." },
+ *        "resource": { ... }
+ *      }
+ *      El webhook hace fetch al dataset via Apify API (necesita APIFY_TOKEN).
+ *      checkIn/checkOut se calculan = today+30 / today+33 (coincide con input).
  *
- * Make scenario sugerido:
- *   1. Schedule trigger (lunes 07:00 Europe/Madrid)
- *   2. Apify "Run an actor" → voyager/booking-scraper con input fijado
- *   3. HTTP POST → https://panel.mendilore.com/api/webhook/apify
- *      Headers: x-apify-secret: <APIFY_WEBHOOK_SECRET>
- *      Body: { apifyRunId, checkIn, checkOut, items: [...] }
+ *   2) LEGACY MAKE (con items pre-agregados en body):
+ *      {
+ *        "apifyRunId": "...",
+ *        "checkIn": "2026-07-05",
+ *        "checkOut": "2026-07-08",
+ *        "items": [...]
+ *      }
  *
- * Si Make falla, GUGO puede recrear el snapshot llamando este endpoint
- * manualmente con curl + el output del último Apify run.
+ * Seguridad: header `x-apify-secret` debe coincidir con APIFY_WEBHOOK_SECRET.
  */
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { z } from "zod";
 
 export const runtime = "edge";
 
-const PayloadSchema = z.object({
-  apifyRunId: z.string().min(1),
-  checkIn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  checkOut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  items: z.array(
-    z.object({
-      name: z.string(),
-      url: z.string().url().optional(),
-      stars: z.number().int().nullable().optional(),
-      rating: z.number().nullable().optional(),
-      ratingLabel: z.string().nullable().optional(),
-      reviewsCount: z.number().int().nullable().optional(),
-      price: z.number().nullable().optional(),
-      currency: z.string().nullable().optional(),
-      available: z.boolean().optional().default(true),
-      raw: z.unknown().optional()
-    })
-  )
-});
+type ApifyItem = {
+  name?: string;
+  url?: string;
+  stars?: number | null;
+  rating?: number | null;
+  ratingLabel?: string | null;
+  reviewsCount?: number | null;
+  price?: number | null;
+  currency?: string | null;
+  available?: boolean;
+  [k: string]: unknown;
+};
+
+function todayPlus(days: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchApifyDataset(actorRunId: string, token: string): Promise<{ items: ApifyItem[]; datasetId: string }> {
+  // 1. Get run metadata to find defaultDatasetId
+  const runRes = await fetch(`https://api.apify.com/v2/actor-runs/${actorRunId}?token=${token}`);
+  if (!runRes.ok) throw new Error(`Apify run fetch failed: ${runRes.status}`);
+  const runJson: any = await runRes.json();
+  const datasetId = runJson?.data?.defaultDatasetId;
+  if (!datasetId) throw new Error("No defaultDatasetId in run metadata");
+
+  // 2. Fetch dataset items
+  const dsRes = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?clean=true&format=json`);
+  if (!dsRes.ok) throw new Error(`Apify dataset fetch failed: ${dsRes.status}`);
+  const items: ApifyItem[] = await dsRes.json();
+  return { items, datasetId };
+}
 
 export async function POST(request: Request) {
-  // 1. Verificar secret header
+  // 1. Verify secret header
   const secret = request.headers.get("x-apify-secret");
   if (!secret || secret !== process.env.APIFY_WEBHOOK_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // 2. Parsear y validar payload
-  let payload: z.infer<typeof PayloadSchema>;
+  // 2. Parse body
+  let body: any;
   try {
-    const body = await request.json();
-    payload = PayloadSchema.parse(body);
-  } catch (err) {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // 3. Detect mode and obtain items + apifyRunId + checkIn/checkOut
+  let items: ApifyItem[];
+  let apifyRunId: string;
+  let checkIn: string;
+  let checkOut: string;
+  let mode: "apify-native" | "legacy-make";
+
+  if (body?.eventData?.actorRunId) {
+    // APIFY NATIVO
+    mode = "apify-native";
+    apifyRunId = body.eventData.actorRunId;
+    const apifyToken = process.env.APIFY_TOKEN;
+    if (!apifyToken) {
+      return NextResponse.json({ error: "APIFY_TOKEN not configured" }, { status: 500 });
+    }
+    try {
+      const fetched = await fetchApifyDataset(apifyRunId, apifyToken);
+      items = fetched.items;
+    } catch (err) {
+      return NextResponse.json(
+        { error: "Failed to fetch dataset from Apify", details: err instanceof Error ? err.message : "Unknown" },
+        { status: 500 }
+      );
+    }
+    // checkIn/checkOut = today + 30 / today + 33 (matches actor input)
+    checkIn = todayPlus(30);
+    checkOut = todayPlus(33);
+  } else if (Array.isArray(body?.items)) {
+    // LEGACY MAKE
+    mode = "legacy-make";
+    apifyRunId = String(body.apifyRunId ?? "manual");
+    items = body.items;
+    checkIn = String(body.checkIn ?? todayPlus(30));
+    checkOut = String(body.checkOut ?? todayPlus(33));
+  } else {
     return NextResponse.json(
-      { error: "Invalid payload", details: err instanceof Error ? err.message : "Unknown" },
+      { error: "Invalid payload: expected eventData.actorRunId (Apify native) or items array (Make legacy)" },
       { status: 400 }
     );
   }
 
-  const { apifyRunId, checkIn, checkOut, items } = payload;
   const supabase = createAdminClient();
 
-  // 3. Buscar competidores por nombre (case-insensitive)
-  const { data: competidores, error: errComp } = await supabase
-    .from("competidores")
-    .select("id, nombre");
-
+  // 4. Fetch competidores for fuzzy name matching
+  const { data: competidores, error: errComp } = await supabase.from("competidores").select("id, nombre");
   if (errComp || !competidores) {
     return NextResponse.json({ error: "Could not fetch competidores", details: errComp?.message }, { status: 500 });
   }
 
-  // Mapa para matching difuso por nombre (Hotel Palacio Obispo ≈ Palacio Obispo)
   const normalize = (s: string) =>
     s.toLowerCase().replace(/hotel\s+|spa|&|\s+/g, " ").trim();
   const compMap = new Map(competidores.map((c) => [normalize(c.nombre), c.id]));
 
-  // 4. Construir rows para insert
+  // 5. Build rows
   const fechaSnapshot = new Date().toISOString().slice(0, 10);
   const rows: any[] = [];
   const skipped: string[] = [];
 
   for (const item of items) {
+    if (!item?.name) {
+      skipped.push("(no name)");
+      continue;
+    }
     const normName = normalize(item.name);
-    let competidor_id: string | undefined;
+    let competidor_id: string | undefined = compMap.get(normName);
 
-    // exact match primero
-    competidor_id = compMap.get(normName);
-
-    // partial match si no hay exact
     if (!competidor_id) {
       for (const [k, v] of compMap.entries()) {
         if (normName.includes(k) || k.includes(normName)) {
@@ -131,56 +162,64 @@ export async function POST(request: Request) {
       continue;
     }
 
-    // Normalizar currency US$ → USD para el campo moneda
-    const moneda = (item.currency ?? "EUR").replace(/^US\$$/, "USD").replace(/^€$/, "EUR").slice(0, 3);
+    const moneda = (item.currency ?? "EUR")
+      .replace(/^US\$$/, "USD")
+      .replace(/^€$/, "EUR")
+      .slice(0, 3);
 
     rows.push({
       competidor_id,
       fecha_snapshot: fechaSnapshot,
       check_in: checkIn,
       check_out: checkOut,
-      precio_total: item.price,
+      precio_total: typeof item.price === "number" ? item.price : null,
       moneda,
       disponible: item.available !== false && item.price !== null && item.price !== undefined,
-      rating: item.rating,
-      rating_label: item.ratingLabel,
-      reviews_count: item.reviewsCount,
+      rating: typeof item.rating === "number" ? item.rating : null,
+      rating_label: item.ratingLabel ?? null,
+      reviews_count: typeof item.reviewsCount === "number" ? item.reviewsCount : null,
       apify_run_id: apifyRunId,
-      raw_data: item.raw ?? null
+      raw_data: item as any
     });
   }
 
   if (rows.length === 0) {
-    return NextResponse.json({ inserted: 0, skipped, error: "No items matched a known competidor" }, { status: 200 });
+    return NextResponse.json({ mode, inserted: 0, skipped, error: "No items matched a known competidor" }, { status: 200 });
   }
 
-  // 5. Upsert (replace si ya hay snapshot del mismo día/competidor/fechas)
+  // 6. Upsert
   const { error: errUpsert, count } = await supabase
     .from("precios_competidores_dia")
     .upsert(rows, { onConflict: "competidor_id,fecha_snapshot,check_in,check_out", count: "exact" });
 
   if (errUpsert) {
-    return NextResponse.json({ error: "Upsert failed", details: errUpsert.message, skipped }, { status: 500 });
+    return NextResponse.json({ error: "Upsert failed", details: errUpsert.message, mode, skipped }, { status: 500 });
   }
 
   return NextResponse.json({
+    mode,
     inserted: count ?? rows.length,
     skipped,
     apifyRunId,
-    fechaSnapshot
+    fechaSnapshot,
+    checkIn,
+    checkOut
   });
 }
 
 export async function GET() {
   return NextResponse.json({
     endpoint: "POST /api/webhook/apify",
-    description: "Recibe output del Apify Booking scraper y escribe a precios_competidores_dia",
+    description: "Recibe Apify Schedule webhook (modo nativo) o Make POST (modo legacy)",
     requiredHeaders: ["x-apify-secret"],
-    payloadSchema: {
-      apifyRunId: "string",
-      checkIn: "YYYY-MM-DD",
-      checkOut: "YYYY-MM-DD",
-      items: "array of { name, url?, stars?, rating?, ratingLabel?, reviewsCount?, price?, currency?, available?, raw? }"
+    modes: {
+      "apify-native": {
+        payload: '{ "eventData": { "actorRunId": "..." }, "eventType": "ACTOR.RUN.SUCCEEDED" }',
+        requires: ["APIFY_TOKEN env var"]
+      },
+      "legacy-make": {
+        payload: '{ "apifyRunId": "...", "checkIn": "YYYY-MM-DD", "checkOut": "YYYY-MM-DD", "items": [...] }'
+      }
     }
   });
 }
