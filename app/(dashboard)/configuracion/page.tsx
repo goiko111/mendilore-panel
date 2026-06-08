@@ -1,4 +1,6 @@
 export const runtime = 'edge';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
