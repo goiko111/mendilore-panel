@@ -38,9 +38,9 @@ export function MetricasChart({ data }: { data: Row[] }) {
             }}
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Line yAxisId="pct" type="monotone" dataKey="occupancy_pct" name="Ocupación %" stroke="#7a6b4f" strokeWidth={2} dot={{ r: 3, fill: "#7a6b4f" }} activeDot={{ r: 5 }} />
-          <Line yAxisId="eur" type="monotone" dataKey="adr" name="ADR €" stroke="#1f7a5a" strokeWidth={2} dot={{ r: 3, fill: "#1f7a5a" }} activeDot={{ r: 5 }} />
-          <Line yAxisId="eur" type="monotone" dataKey="revpar" name="RevPAR €" stroke="#8a4f2a" strokeWidth={2} dot={{ r: 3, fill: "#8a4f2a" }} activeDot={{ r: 5 }} />
+          <Line yAxisId="pct" type="monotone" dataKey="occupancy_pct" name="Ocupación %" stroke="#7a6b4f" strokeWidth={2} isAnimationActive={false} dot={{ r: 3, fill: "#7a6b4f" }} activeDot={{ r: 5 }} />
+          <Line yAxisId="eur" type="monotone" dataKey="adr" name="ADR €" stroke="#1f7a5a" strokeWidth={2} isAnimationActive={false} dot={{ r: 3, fill: "#1f7a5a" }} activeDot={{ r: 5 }} />
+          <Line yAxisId="eur" type="monotone" dataKey="revpar" name="RevPAR €" stroke="#8a4f2a" strokeWidth={2} isAnimationActive={false} dot={{ r: 3, fill: "#8a4f2a" }} activeDot={{ r: 5 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
