@@ -32,9 +32,11 @@ export async function updateSession(request: NextRequest) {
   const isApiWebhook = request.nextUrl.pathname.startsWith("/api/webhook");
   const isAceptarPublico = request.nextUrl.pathname.startsWith("/aceptar");
   const isApiAceptar = request.nextUrl.pathname.startsWith("/api/aceptar-condiciones");
+  const isApiCron = request.nextUrl.pathname.startsWith("/api/cron");
+  const isApiExport = request.nextUrl.pathname.startsWith("/api/export");
 
-  // Redirect: si no hay usuario y no estamos en login/webhook/aceptar (público) → /login
-  if (!user && !isAuthPage && !isApiWebhook && !isAceptarPublico && !isApiAceptar) {
+  // Redirect: si no hay usuario y no estamos en login/webhook/aceptar/cron (público o auth-by-header) → /login
+  if (!user && !isAuthPage && !isApiWebhook && !isAceptarPublico && !isApiAceptar && !isApiCron && !isApiExport) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);
