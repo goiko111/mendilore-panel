@@ -138,6 +138,7 @@ export async function POST(request: Request) {
     actualizadas,
     errores: errores.length,
     errores_scraping: payload.errors?.length ?? 0,
+    primeros_errores: errores.slice(0, 5),
   });
 }
 
