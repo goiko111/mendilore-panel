@@ -168,36 +168,85 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
   if (idx >= handles.length) return false;
 
   try {
+    // Estrategia 1: doble-click (MrPlan TCloudV2 abre el detalle con double-click)
+    try {
+      await handles[idx].click({ clickCount: 2, delay: 30 });
+      await new Promise((r) => setTimeout(r, 600));
+    } catch { /* try next */ }
+
+    // Esperar modal de Bootstrap/MrPlan
+    const modalSelectors = [
+      '.modal.show',
+      '.modal.in',
+      '.modal[style*="display: block"]',
+      '#modal_reserva',
+      '#modalReserva',
+      '#modal-reserva',
+      '.modal-reserva',
+      '[role="dialog"][aria-modal="true"]',
+      '.swal2-popup',
+      '.ui-dialog',
+    ];
+    for (const sel of modalSelectors) {
+      const found = await frame.waitForSelector(sel, { visible: true, timeout: 1500 }).catch(() => null);
+      if (found) {
+        if (debug) log.info(`Modal opened via dblclick · selector="${sel}" · idx=${idx}`);
+        return true;
+      }
+    }
+
+    // Estrategia 2: click + buscar botón "Abrir Reserva" / "Editar Reserva"
     await handles[idx].click({ delay: 50 });
     await new Promise((r) => setTimeout(r, 400));
 
-    // El popup intermedio puede tener un botón "Abrir Reserva" o "Ver detalle"
-    const openButtonSelectors = [
-      'button:has-text("Abrir Reserva")',
-      'a:has-text("Abrir Reserva")',
-      'button:has-text("Ver detalle")',
-      'a.btn-abrir-reserva',
-    ];
-    for (const sel of openButtonSelectors) {
-      try {
-        await frame.click(sel, { delay: 50, timeout: 1500 } as any);
-        break;
-      } catch { /* try next */ }
-    }
+    const openClicked = await frame.evaluate(() => {
+      const candidates = Array.from(document.querySelectorAll('a, button, li, div, span'));
+      for (const el of candidates) {
+        const txt = (el.textContent || '').trim();
+        if (/^(Abrir Reserva|Ver detalle|Editar Reserva|Ver Reserva|Detalle Reserva)$/i.test(txt)) {
+          (el as HTMLElement).click();
+          return { found: true, text: txt };
+        }
+      }
+      return { found: false };
+    }).catch(() => ({ found: false }));
+    if (debug && (openClicked as any).found) log.info(`Clicked open button: ${(openClicked as any).text}`);
 
-    // Esperar modal
-    const modalSelectors = [
-      '.modal-reserva',
-      '.modal.show',
-      '#reserva-modal',
-      '[role="dialog"]',
-    ];
     for (const sel of modalSelectors) {
-      const found = await frame.waitForSelector(sel, { visible: true, timeout: 3000 }).catch(() => null);
-      if (found) return true;
+      const found = await frame.waitForSelector(sel, { visible: true, timeout: 1500 }).catch(() => null);
+      if (found) {
+        if (debug) log.info(`Modal opened via open-button · selector="${sel}" · idx=${idx}`);
+        return true;
+      }
     }
 
-    if (debug) log.warning(`Modal didn't appear for reserva idx ${idx}`);
+    // Estrategia 3: en el documento (no solo frame) por si MrPlan abre modal a nivel top
+    try {
+      const page = (frame as any).page ? (frame as any).page() : null;
+      if (page) {
+        for (const sel of modalSelectors) {
+          const found = await page.waitForSelector(sel, { visible: true, timeout: 1000 }).catch(() => null);
+          if (found) {
+            if (debug) log.info(`Modal opened at page-level · selector="${sel}" · idx=${idx}`);
+            return true;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
+    if (debug) {
+      log.warning(`Modal didn't appear for reserva idx ${idx}`);
+      // Guardar screenshot del estado actual para debug
+      try {
+        const page = (frame as any).page ? (frame as any).page() : null;
+        if (page && idx < 3) {
+          const { KeyValueStore } = await import('crawlee');
+          const store = await KeyValueStore.open('debug-screenshots');
+          const png = await page.screenshot({ fullPage: true, type: 'png' });
+          await store.setValue(`reserva-idx-${idx}-no-modal.png`, png, { contentType: 'image/png' });
+        }
+      } catch { /* ignore */ }
+    }
     return false;
   } catch (err) {
     log.warning(`openReservaModal idx ${idx} failed: ${(err as Error).message}`);
