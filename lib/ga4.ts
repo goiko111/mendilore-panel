@@ -1,3 +1,4 @@
+// Rebuild trigger: 2026-06-09T11:35:08Z - GA4 env vars added
 /**
  * Cliente GA4 Data API server-side para Cloudflare Pages edge runtime.
  *
