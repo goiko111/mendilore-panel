@@ -54,30 +54,50 @@ async function getMainFrame(page: Page): Promise<Frame> {
   return cloud;
 }
 
-/** Navegar al Planning desde el menú principal */
+/** Navegar al Planning desde el menú principal o desde el dashboard */
 async function gotoPlanning(page: Page, frame: Frame): Promise<Frame> {
   log.info('Navigating to Planning section');
 
-  // Intentar varios selectores conocidos del menú
-  const candidates = [
-    'a[href*="Planning"]',
-    'a:has-text("Planning")',
-    '.menu-item:has-text("Planning")',
-    '[data-section="planning"]',
-  ];
+  // 1. Buscar por texto exacto "Planning" en cualquier elemento clicable
+  //    (la home post-login muestra menú lateral con items + botón "Ir al Planning")
+  const clicked = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('a, button, li, div, span'));
+    for (const el of candidates) {
+      const txt = (el.textContent || '').trim();
+      if (/^(Ir al Planning|Planning)$/i.test(txt)) {
+        const target = el.closest('a, button, li, [onclick], [data-href]') || el;
+        (target as HTMLElement).click();
+        return { found: true, text: txt, tag: el.tagName };
+      }
+    }
+    return { found: false };
+  });
+  log.info(`Planning click result: ${JSON.stringify(clicked)}`);
 
-  let clicked = false;
-  for (const sel of candidates) {
+  // Esperar navegación o cambio de iframe
+  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => null);
+  await new Promise((r) => setTimeout(r, 2000));
+
+  // También intentar en el frame por si hace falta
+  if (!clicked.found) {
     try {
-      await frame.click(sel, { delay: 50 });
-      clicked = true;
-      break;
+      await frame.evaluate(() => {
+        const candidates = Array.from(document.querySelectorAll('a, button, li, div, span'));
+        for (const el of candidates) {
+          const txt = (el.textContent || '').trim();
+          if (/^(Ir al Planning|Planning)$/i.test(txt)) {
+            (el as HTMLElement).click();
+            return true;
+          }
+        }
+        return false;
+      });
     } catch {
-      // try next
+      // ignore
     }
   }
 
-  if (!clicked) {
+  if (!clicked.found) {
     log.warning('Could not find Planning menu link — assuming we are already in Planning view');
   }
 
