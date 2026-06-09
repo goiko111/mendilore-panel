@@ -1,24 +1,6 @@
 /**
  * Parser del modal de reserva MisterPlan TCloudV2.
- *
- * Estructura observada (D-2026-06-09 con dumps reales):
- *   - "Id reserva 3225-6753874"
- *   - "Localizador externo 6036249162"
- *   - "Fecha Reserva 06/01/2026 21:43:53"
- *   - "Entrada - Salida 23/06/2026 - 25/06/2026 (2 n.)"
- *   - "Reserva desde Booking.com" / "Reserva desde Directo"
- *   - "Habitación Lino (23/06/2026)"
- *   - "Nombre fam. van Ginkel"
- *   - "email fginke.707077@guest.booking.com"
- *   - "Teléfono +31651542037"
- *   - "Forma de pago transferencia"
- *   - "Importe de la reserva 376,20 €"
- *   - "Pendiente de cobro 376,20 €"
- *   - "Anticipo Sin anticipo" / "Anticipo 100,00 €"
- *   - "2 pax" (en sección Elementos de la reserva)
- *
- * Trabajamos sobre el innerText del modal — más robusto que selectores CSS
- * porque el HTML de MrPlan está poco estructurado semánticamente.
+ * (Reescrito v3 con dumps reales 9-jun-2026)
  */
 
 import type { Frame } from 'puppeteer';
@@ -44,7 +26,6 @@ function parseFechaDDMMYYYY(s: string): string {
 }
 
 function parseFechaISO(s: string): string {
-  // "06/01/2026 21:43:53" → "2026-01-06T21:43:53"
   const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})/);
   if (!m) return parseFechaDDMMYYYY(s);
   const [, d, mo, y, h, mi, se] = m;
@@ -72,7 +53,6 @@ const HABITACIONES_VALIDAS: Habitacion[] = ['cala', 'nube', 'margarita', 'lino',
 
 function normalizarHabitacion(s: string): Habitacion | string {
   const t = s.toLowerCase().replace(/^habitaci[oó]n\s+/i, '').trim();
-  // Buscar match parcial con habitaciones conocidas
   for (const h of HABITACIONES_VALIDAS) {
     if (t.includes(h)) return h;
   }
@@ -87,14 +67,19 @@ function splitNombre(s: string): { nombre: string; apellidos: string | null } {
 
 export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | null> {
   let modalText = '';
+  let foundSelector = '';
   for (const sel of MODAL_SELECTORS) {
     try {
       const result = await frame.evaluate((s: string) => {
-        const m = document.querySelector(s);
-        return m ? (m as HTMLElement).innerText || '' : null;
+        // Si hay varios modales abiertos (poco probable pero defensivo), tomar el último
+        const ms = document.querySelectorAll(s);
+        if (ms.length === 0) return null;
+        const m = ms[ms.length - 1];
+        return (m as HTMLElement).innerText || '';
       }, sel);
       if (result) {
         modalText = result;
+        foundSelector = sel;
         break;
       }
     } catch { /* try next */ }
@@ -103,6 +88,9 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     log.warning('parseModalReserva: no modal found');
     return null;
   }
+
+  // Solo logear el match para debug
+  log.debug(`parseModalReserva: matched ${foundSelector} (${modalText.length} chars)`);
 
   // === Extracción por regex sobre innerText ===
 
@@ -148,12 +136,10 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
   const anticipoMatch = modalText.match(/Anticipo\s+(?:(Sin anticipo)|([\d.,]+)\s*€)/i);
   const anticipo = anticipoMatch && anticipoMatch[2] ? parseImporte(anticipoMatch[2]) : 0;
 
-  // Estado cobro
   let estado_cobro: EstadoCobro = 'pendiente';
   if (importe_total > 0 && pendiente_cobro === 0) estado_cobro = 'cobrado';
   else if (anticipo > 0 && pendiente_cobro > 0) estado_cobro = 'parcial';
 
-  // Estado reserva
   let estado_reserva: EstadoReserva = 'confirmada';
   if (modalText.match(/Reserva\s+anulada|estado:\s*Cancelada|Cancelada\s+por/i)) {
     estado_reserva = 'cancelada';
@@ -164,20 +150,31 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
   const formaPagoMatch = modalText.match(/Forma de pago\s+(\w+)/i);
   const forma_pago = formaPagoMatch?.[1]?.toLowerCase() || null;
 
-  // num huéspedes (de "2 pax" o "2P Estándar")
   const paxMatch = modalText.match(/(\d+)\s*pax/i) || modalText.match(/(\d+)P\s+Est/i);
   const num_huespedes = paxMatch ? parseInt(paxMatch[1], 10) : null;
 
-  // Comentarios al final - extraer comentario del cliente
   const comentarioMatch = modalText.match(/Comentario del Cliente:\s*([\s\S]+?)(?:Condiciones|---|$)/i);
   const observaciones = comentarioMatch?.[1]?.trim().substring(0, 500) || null;
 
+  // === VALIDACIÓN ESTRICTA — schema SQL espera fechas válidas ===
   if (!id_reserva) {
-    log.warning(`parseModalReserva: no id_reserva detectado (modal text first 200 chars: ${modalText.substring(0, 200)})`);
+    log.warning(`parseModalReserva: no id_reserva (text first 300: ${modalText.substring(0, 300)})`);
     return null;
   }
   if (!fecha_in || !fecha_out) {
-    log.warning(`Reserva ${id_reserva}: fechas vacías (in=${fecha_in}, out=${fecha_out})`);
+    log.warning(`Reserva ${id_reserva}: fechas vacías (in=${fecha_in}, out=${fecha_out}) — descartada para evitar SQL error`);
+    return null;
+  }
+  if (!habitacion) {
+    log.warning(`Reserva ${id_reserva}: habitacion vacía — descartada`);
+    return null;
+  }
+  if (importe_total === 0) {
+    log.warning(`Reserva ${id_reserva}: importe_total = 0 — descartada (probable modal stale)`);
+    return null;
+  }
+  if (!fecha_reserva) {
+    log.warning(`Reserva ${id_reserva}: fecha_reserva vacía, usando fecha_in como fallback`);
   }
 
   const reserva: ReservaScraped = {
@@ -188,7 +185,7 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     fecha_in,
     fecha_out,
     noches,
-    huesped_nombre,
+    huesped_nombre: huesped_nombre || 'Sin nombre',
     huesped_apellidos,
     huesped_email,
     huesped_telefono,
@@ -202,7 +199,7 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     estado_cobro,
     forma_pago,
     factura_num: null,
-    fecha_reserva,
+    fecha_reserva: fecha_reserva || `${fecha_in}T00:00:00Z`,
     observaciones,
     num_huespedes,
   };
