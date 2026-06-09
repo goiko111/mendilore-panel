@@ -253,6 +253,61 @@ export default async function CompetenciaPage() {
                     );
                   })}
                 </tr>
+
+                {/* Fila 🎯 Sugerencia Casa Mendilore (heurística Nivel 1) */}
+                <tr className="bg-primary/5 font-medium border-t-2 border-primary/20">
+                  <td className="px-4 py-3 sticky left-0 bg-primary/5 z-10">
+                    <div className="text-sm text-foreground flex items-center gap-1.5">🎯 Sugerencia Casa Mendilore</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">Basado en señales de mercado · solo orientativa</div>
+                  </td>
+                  {ventanas.map((check_in) => {
+                    const est = estadisticosPorVentana.get(check_in);
+                    if (!est) {
+                      return <td key={check_in} className="px-4 py-3 text-right text-muted-foreground italic text-xs">—</td>;
+                    }
+                    const pctSoldOut = est.nTotal > 0 ? 1 - est.nDisponibles / est.nTotal : 0;
+                    let factor = 1.0;
+                    let label = "Neutro";
+                    let colorClass = "text-muted-foreground";
+                    let bgClass = "bg-muted/40";
+                    if (est.nDisponibles === 0) {
+                      factor = 1.15;
+                      label = "Mercado lleno";
+                      colorClass = "text-emerald-700 dark:text-emerald-400";
+                      bgClass = "bg-emerald-50 dark:bg-emerald-950/30";
+                    } else if (pctSoldOut >= 0.66) {
+                      factor = 1.10;
+                      label = "Mercado caliente";
+                      colorClass = "text-emerald-700 dark:text-emerald-400";
+                      bgClass = "bg-emerald-50 dark:bg-emerald-950/30";
+                    } else if (pctSoldOut >= 0.40) {
+                      factor = 1.05;
+                      label = "Demanda firme";
+                      colorClass = "text-emerald-600 dark:text-emerald-500";
+                      bgClass = "bg-emerald-50/60 dark:bg-emerald-950/20";
+                    } else if (pctSoldOut <= 0.15) {
+                      factor = 0.95;
+                      label = "Tranquilo";
+                      colorClass = "text-orange-700 dark:text-orange-400";
+                      bgClass = "bg-orange-50 dark:bg-orange-950/30";
+                    } else {
+                      factor = 1.0;
+                      label = "En línea";
+                      colorClass = "text-foreground";
+                    }
+                    const sugerido = est.media * factor;
+                    const deltaPct = (factor - 1) * 100;
+                    const signo = deltaPct > 0 ? "+" : "";
+                    return (
+                      <td key={check_in} className={`px-4 py-3 text-right ${bgClass}`}>
+                        <div className={`font-semibold ${colorClass}`}>{formatCurrency(sugerido, est.moneda)}/n</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {label} · {signo}{deltaPct.toFixed(0)}% vs media
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
               </tbody>
             </table>
           </div>
@@ -263,6 +318,12 @@ export default async function CompetenciaPage() {
             </p>
             <p>
               <strong>"Sold out"</strong> = el competidor no tiene disponibilidad en esa fecha. <strong>"—"</strong> = aún no escaneado para esa ventana. El scraper Apify se ejecuta automáticamente cada lunes a las 07:00 (Europe/Madrid) cubriendo 8 ventanas temporales (semana próxima, +2 semanas, +1 mes, +2 meses, +3 meses, +4 meses, semestre, año siguiente). Las fechas exactas son orientativas — el objetivo es comparar tu precio con la curva de mercado en cada período.
+            </p>
+            <p>
+              <strong className="text-foreground">🎯 Sugerencia Casa Mendilore:</strong> heurística sencilla basada en ocupación de competidores en esa ventana.
+              <strong>Mercado lleno</strong> (0 disponibles) → +15% sobre media. <strong>Caliente</strong> (≥66% sold out) → +10%.
+              <strong>Demanda firme</strong> (≥40% sold out) → +5%. <strong>En línea</strong> (mercado neutral) → media exacta.
+              <strong>Tranquilo</strong> (≤15% sold out) → −5% para captar reservas. Es solo orientativa: la decisión final la tomas tú en MisterPlan.
             </p>
           </div>
         </div>
