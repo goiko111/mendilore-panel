@@ -15,7 +15,16 @@
         "overview": {
           "title": "Resumen",
           "transformation": {
-            "fields": ["id_reserva", "habitacion", "fecha_in", "fecha_out", "huesped_nombre", "importe_total", "estado_cobro", "canal"]
+            "fields": [
+              "id_reserva",
+              "habitacion",
+              "fecha_in",
+              "fecha_out",
+              "huesped_nombre",
+              "importe_total",
+              "estado_cobro",
+              "canal"
+            ]
           },
           "display": {
             "component": "table"
@@ -23,5 +32,10 @@
         }
       }
     }
+  },
+  "defaultRunOptions": {
+    "timeoutSecs": 1800,
+    "memoryMbytes": 2048,
+    "build": "latest"
   }
 }
