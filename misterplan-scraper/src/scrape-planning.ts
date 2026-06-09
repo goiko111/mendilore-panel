@@ -190,7 +190,29 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
     for (const sel of modalSelectors) {
       const found = await frame.waitForSelector(sel, { visible: true, timeout: 1500 }).catch(() => null);
       if (found) {
-        if (debug) log.info(`Modal opened via dblclick · selector="${sel}" · idx=${idx}`);
+        if (debug) {
+          log.info(`Modal opened via dblclick · selector="${sel}" · idx=${idx}`);
+          // Dump modal HTML para las primeras 3 reservas
+          if (idx < 3) {
+            try {
+              const html = await frame.evaluate((s: string) => {
+                const m = document.querySelector(s);
+                return m ? m.outerHTML : '';
+              }, sel);
+              if (html) {
+                const page = (frame as any).page ? (frame as any).page() : null;
+                if (page) {
+                  const png = await page.screenshot({ fullPage: true, type: 'png' });
+                  const { KeyValueStore } = await import('crawlee');
+                  const store = await KeyValueStore.open('debug-screenshots');
+                  await store.setValue(`modal-dblclick-idx-${idx}.html`, html, { contentType: 'text/html' });
+                  await store.setValue(`modal-dblclick-idx-${idx}.png`, png, { contentType: 'image/png' });
+                  log.info(`Modal HTML dumped: modal-dblclick-idx-${idx}.html (${html.length} chars)`);
+                }
+              }
+            } catch (e: any) { log.warning(`dump fail: ${e.message}`); }
+          }
+        }
         return true;
       }
     }
@@ -215,7 +237,28 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
     for (const sel of modalSelectors) {
       const found = await frame.waitForSelector(sel, { visible: true, timeout: 1500 }).catch(() => null);
       if (found) {
-        if (debug) log.info(`Modal opened via open-button · selector="${sel}" · idx=${idx}`);
+        if (debug) {
+          log.info(`Modal opened via open-button · selector="${sel}" · idx=${idx}`);
+          if (idx < 3) {
+            try {
+              const html = await frame.evaluate((s: string) => {
+                const m = document.querySelector(s);
+                return m ? m.outerHTML : '';
+              }, sel);
+              if (html) {
+                const page = (frame as any).page ? (frame as any).page() : null;
+                if (page) {
+                  const png = await page.screenshot({ fullPage: true, type: 'png' });
+                  const { KeyValueStore } = await import('crawlee');
+                  const store = await KeyValueStore.open('debug-screenshots');
+                  await store.setValue(`modal-openbtn-idx-${idx}.html`, html, { contentType: 'text/html' });
+                  await store.setValue(`modal-openbtn-idx-${idx}.png`, png, { contentType: 'image/png' });
+                  log.info(`Modal HTML dumped: modal-openbtn-idx-${idx}.html (${html.length} chars)`);
+                }
+              }
+            } catch (e: any) { log.warning(`dump fail: ${e.message}`); }
+          }
+        }
         return true;
       }
     }
