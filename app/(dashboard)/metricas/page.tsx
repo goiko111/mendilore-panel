@@ -5,11 +5,14 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState, StatCard } from "@/components/page-header";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 import { MetricasChart } from "./chart";
+import { fetchGA4Snapshot, ga4Configured } from "@/lib/ga4";
 
 export const metadata = { title: "Métricas" };
 
 export default async function MetricasPage() {
   const supabase = await createClient();
+  // GA4 snapshot (no bloquea ni rompe si no está configurado o falla)
+  const ga4Promise = ga4Configured() ? fetchGA4Snapshot() : Promise.resolve(null);
   const today = new Date();
   const desde = new Date(today.getTime() - 30 * 86400_000).toISOString().slice(0, 10);
   // Rango extendido para el gráfico: 60d atrás → 90d adelante (cubre histórico + pipeline)
@@ -130,6 +133,8 @@ export default async function MetricasPage() {
     .sort((a, b) => b.revenue - a.revenue);
   const totalChannelRevenue = channelMix.reduce((s, c) => s + c.revenue, 0);
 
+  const ga4 = await ga4Promise;
+
   // Recortar el rango del gráfico a la ventana con datos relevantes
   // (primer día con reserva → último día con reserva + 7d de margen)
   const diasConDatos = (metricasChart ?? []).filter((m) => Number(m.habitaciones_ocupadas ?? 0) > 0);
@@ -240,24 +245,88 @@ export default async function MetricasPage() {
         </div>
       )}
 
-      {/* GA4 visitas web — CTA externo a Looker Studio (no embed por limitación de cookies de terceros) */}
+      {/* Visitas web GA4 (server-side, sin Looker) */}
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
             <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
             <p className="text-xs text-muted-foreground">
-              Sesiones, usuarios, top pages y fuentes de tráfico en directo desde GA4 (informe Looker Studio).
+              Sesiones, usuarios, top pages y fuentes en directo desde GA4 · últimos 30 días
             </p>
           </div>
           <a
             href="https://lookerstudio.google.com/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 inline-flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap"
+            className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap"
           >
-            Abrir Looker Studio ↗
+            Looker Studio ↗
           </a>
         </div>
+
+        {ga4 ? (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Sesiones</div>
+                <div className="text-xl font-semibold text-foreground mt-1">{ga4.sesiones.toLocaleString("es-ES")}</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Usuarios</div>
+                <div className="text-xl font-semibold text-foreground mt-1">{ga4.usuarios.toLocaleString("es-ES")}</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Páginas vistas</div>
+                <div className="text-xl font-semibold text-foreground mt-1">{ga4.pageviews.toLocaleString("es-ES")}</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Rebote</div>
+                <div className="text-xl font-semibold text-foreground mt-1">{formatPercent(ga4.bounceRate * 100)}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <div className="text-xs font-semibold text-foreground mb-2">Top páginas</div>
+                <ul className="space-y-1.5">
+                  {ga4.topPaginas.length === 0 ? (
+                    <li className="text-xs text-muted-foreground italic">Sin datos</li>
+                  ) : (
+                    ga4.topPaginas.map((p) => (
+                      <li key={p.ruta} className="flex items-center justify-between text-xs">
+                        <span className="truncate text-foreground">{p.ruta || "/"}</span>
+                        <span className="shrink-0 ml-3 tabular-nums text-muted-foreground">{p.views}</span>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-foreground mb-2">Fuentes de tráfico</div>
+                <ul className="space-y-1.5">
+                  {ga4.topFuentes.length === 0 ? (
+                    <li className="text-xs text-muted-foreground italic">Sin datos</li>
+                  ) : (
+                    ga4.topFuentes.map((f) => (
+                      <li key={f.fuente} className="flex items-center justify-between text-xs">
+                        <span className="truncate text-foreground capitalize">{f.fuente || "(direct)"}</span>
+                        <span className="shrink-0 ml-3 tabular-nums text-muted-foreground">{f.sesiones} sesiones</span>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-lg bg-muted/30 border border-dashed border-border p-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              GA4 Data API aún no configurado. Mientras tanto consulta el informe completo en Looker Studio.
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-2 italic">
+              Setup: añadir <code className="bg-muted px-1 rounded">GA4_SA_JSON</code> y <code className="bg-muted px-1 rounded">GA4_PROPERTY_ID</code> como Secret env vars en CF Pages.
+            </p>
+          </div>
+        )}
       </div>
 
       {!porSemana || porSemana.length === 0 ? (
