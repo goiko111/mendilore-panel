@@ -1,178 +1,211 @@
 /**
- * Parser del modal de detalle de reserva en MisterPlan.
+ * Parser del modal de reserva MisterPlan TCloudV2.
  *
- * Estructura observada (recon D-132):
- *   - Header con "Reserva 1-7328706"
- *   - Tabla con filas: "Reserva desde", "Llegada", "Salida", "Noches",
- *                      "Habitación", "Huésped", "Email", "Teléfono",
- *                      "Importe", "Anticipo", "Pendiente", "Forma de pago",
- *                      "Factura", "Observaciones", "Fecha reserva"
+ * Estructura observada (D-2026-06-09 con dumps reales):
+ *   - "Id reserva 3225-6753874"
+ *   - "Localizador externo 6036249162"
+ *   - "Fecha Reserva 06/01/2026 21:43:53"
+ *   - "Entrada - Salida 23/06/2026 - 25/06/2026 (2 n.)"
+ *   - "Reserva desde Booking.com" / "Reserva desde Directo"
+ *   - "Habitación Lino (23/06/2026)"
+ *   - "Nombre fam. van Ginkel"
+ *   - "email fginke.707077@guest.booking.com"
+ *   - "Teléfono +31651542037"
+ *   - "Forma de pago transferencia"
+ *   - "Importe de la reserva 376,20 €"
+ *   - "Pendiente de cobro 376,20 €"
+ *   - "Anticipo Sin anticipo" / "Anticipo 100,00 €"
+ *   - "2 pax" (en sección Elementos de la reserva)
  *
- * El parser usa una estrategia de pares clave-valor por proximidad textual:
- * busca elementos con texto "Llegada" y extrae el contenido del siguiente
- * `<td>` o sibling. Si MisterPlan cambia la maquetación, el parser sigue
- * funcionando si las claves siguen presentes.
- *
- * Esta estrategia hace el scraper resistente a tweaks visuales.
+ * Trabajamos sobre el innerText del modal — más robusto que selectores CSS
+ * porque el HTML de MrPlan está poco estructurado semánticamente.
  */
 
 import type { Frame } from 'puppeteer';
 import { log } from 'crawlee';
-import type { ReservaScraped, Habitacion } from './types.js';
-import {
-  parseEuros,
-  parseDateESP,
-  parseDateTimeESP,
-  diffNoches,
-  mapCanal,
-  normalizeHabitacion,
-  calcEstadoCobro,
-  inferEstadoReserva,
-  splitNombre,
-  normalizePais,
-  parseIdReserva,
-  detectMoneda,
-} from './utils.js';
+import type { ReservaScraped, Canal, EstadoCobro, EstadoReserva, Habitacion } from './types.js';
 
-/** Extrae value asociado a una key dentro del modal. */
-async function extractByLabel(frame: Frame, labels: string[]): Promise<string | null> {
-  for (const label of labels) {
-    const value = await frame.evaluate((labelText) => {
-      // Buscar el elemento que contenga exactamente o startsWith ese label
-      const all = Array.from(document.querySelectorAll('td, th, label, .field-label, dt, span, div'));
-      const labelEl = all.find((el) => {
-        const t = (el.textContent ?? '').trim();
-        return t === labelText || t === labelText + ':' || t.startsWith(labelText);
-      });
-      if (!labelEl) return null;
+const MODAL_SELECTORS = [
+  '.modal.show',
+  '.modal.in',
+  '.modal[style*="display: block"]',
+  '#modal_reserva',
+  '#modalReserva',
+  '#modal-reserva',
+  '.modal-reserva',
+  '[role="dialog"][aria-modal="true"]',
+];
 
-      // Heurística 1: el siguiente sibling con texto
-      let sibling = labelEl.nextElementSibling;
-      while (sibling) {
-        const txt = (sibling.textContent ?? '').trim();
-        if (txt && txt !== labelText) return txt;
-        sibling = sibling.nextElementSibling;
-      }
+function parseFechaDDMMYYYY(s: string): string {
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return '';
+  const [, d, mm, y] = m;
+  return `${y}-${mm.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}
 
-      // Heurística 2: si el labelEl es un <td>, mirar el siguiente <td> de la fila
-      if (labelEl.tagName === 'TD') {
-        const tr = labelEl.parentElement;
-        if (tr) {
-          const tds = Array.from(tr.querySelectorAll('td'));
-          const idx = tds.indexOf(labelEl as HTMLTableCellElement);
-          if (idx >= 0 && idx + 1 < tds.length) {
-            const next = (tds[idx + 1].textContent ?? '').trim();
-            if (next) return next;
-          }
-        }
-      }
+function parseFechaISO(s: string): string {
+  // "06/01/2026 21:43:53" → "2026-01-06T21:43:53"
+  const m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})/);
+  if (!m) return parseFechaDDMMYYYY(s);
+  const [, d, mo, y, h, mi, se] = m;
+  return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T${h.padStart(2, '0')}:${mi.padStart(2, '0')}:${se.padStart(2, '0')}`;
+}
 
-      // Heurística 3: si el label es un <dt>, el siguiente <dd>
-      if (labelEl.tagName === 'DT') {
-        const dd = labelEl.nextElementSibling;
-        if (dd?.tagName === 'DD') return (dd.textContent ?? '').trim() || null;
-      }
+function parseImporte(s: string): number {
+  const cleaned = s.replace(/[€\s]/g, '').replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
 
-      return null;
-    }, label);
-    if (value && value !== '') return value;
+function normalizarCanal(s: string): Canal {
+  const t = s.toLowerCase().trim();
+  if (t.includes('booking')) return 'booking';
+  if (t.includes('airbnb')) return 'airbnb';
+  if (t.includes('expedia')) return 'expedia';
+  if (t.includes('directo') || t.includes('teléfono') || t.includes('telefono')) return 'directo';
+  if (t.includes('web') || t.includes('propia')) return 'web_propia';
+  if (t.includes('walk') || t.includes('puerta')) return 'walk_in';
+  return 'otro';
+}
+
+const HABITACIONES_VALIDAS: Habitacion[] = ['cala', 'nube', 'margarita', 'lino', 'limonero', 'lavanda'];
+
+function normalizarHabitacion(s: string): Habitacion | string {
+  const t = s.toLowerCase().replace(/^habitaci[oó]n\s+/i, '').trim();
+  // Buscar match parcial con habitaciones conocidas
+  for (const h of HABITACIONES_VALIDAS) {
+    if (t.includes(h)) return h;
   }
-  return null;
+  return t;
 }
 
-/** Lee TODO el texto del modal — útil para regex como fallback y para id_reserva del header */
-async function getModalText(frame: Frame): Promise<string> {
-  return await frame.evaluate(() => {
-    const selectors = ['.modal-reserva', '.modal.show', '#reserva-modal', '[role="dialog"]'];
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el) return (el as HTMLElement).innerText;
-    }
-    return '';
-  });
+function splitNombre(s: string): { nombre: string; apellidos: string | null } {
+  const parts = s.trim().split(/\s+/);
+  if (parts.length <= 1) return { nombre: s.trim(), apellidos: null };
+  return { nombre: parts[0], apellidos: parts.slice(1).join(' ') };
 }
 
-/** Construye el objeto ReservaScraped a partir del DOM del modal. */
 export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | null> {
-  const modalText = await getModalText(frame);
-  if (!modalText) return null;
-
-  // Identificador único de la reserva (clave del upsert)
-  const idReserva = parseIdReserva(modalText);
-  if (!idReserva) {
-    log.warning('Modal sin ID reserva detectable — saltando');
+  let modalText = '';
+  for (const sel of MODAL_SELECTORS) {
+    try {
+      const result = await frame.evaluate((s: string) => {
+        const m = document.querySelector(s);
+        return m ? (m as HTMLElement).innerText || '' : null;
+      }, sel);
+      if (result) {
+        modalText = result;
+        break;
+      }
+    } catch { /* try next */ }
+  }
+  if (!modalText) {
+    log.warning('parseModalReserva: no modal found');
     return null;
   }
 
-  // Extraer campos individuales por label
-  const llegadaStr = (await extractByLabel(frame, ['Llegada', 'Entrada', 'Check-in'])) ?? '';
-  const salidaStr = (await extractByLabel(frame, ['Salida', 'Check-out'])) ?? '';
-  const habitacionStr = (await extractByLabel(frame, ['Habitación', 'Habitacion', 'Tipo habitación'])) ?? '';
-  const huespedStr = (await extractByLabel(frame, ['Huésped', 'Huesped', 'Cliente', 'Titular'])) ?? '';
-  const emailStr = (await extractByLabel(frame, ['Email', 'E-mail', 'Correo'])) ?? '';
-  const telefonoStr = (await extractByLabel(frame, ['Teléfono', 'Telefono', 'Móvil'])) ?? '';
-  const paisStr = (await extractByLabel(frame, ['País', 'Pais', 'Nacionalidad'])) ?? '';
-  const docStr = (await extractByLabel(frame, ['Documento', 'DNI', 'NIE', 'Pasaporte'])) ?? '';
-  const importeStr = (await extractByLabel(frame, ['Importe total', 'Importe', 'Total'])) ?? '';
-  const anticipoStr = (await extractByLabel(frame, ['Anticipo', 'Pagado'])) ?? '';
-  const pendienteStr = (await extractByLabel(frame, ['Pendiente', 'Pendiente cobro'])) ?? '';
-  const canalStr = (await extractByLabel(frame, ['Reserva desde', 'Canal', 'Origen'])) ?? '';
-  const formaPagoStr = (await extractByLabel(frame, ['Forma de pago', 'Método pago', 'Pago'])) ?? '';
-  const facturaStr = (await extractByLabel(frame, ['Factura', 'Nº factura', 'Factura nº'])) ?? '';
-  const fechaReservaStr = (await extractByLabel(frame, ['Fecha reserva', 'Fecha alta', 'Realizada'])) ?? '';
-  const observacionesStr = (await extractByLabel(frame, ['Observaciones', 'Notas', 'Comentarios'])) ?? '';
-  const localizadorStr = (await extractByLabel(frame, ['Localizador', 'Reserva externa', 'Booking ID'])) ?? '';
-  const numHuespedesStr = (await extractByLabel(frame, ['Huéspedes', 'Personas', 'Adultos'])) ?? '';
+  // === Extracción por regex sobre innerText ===
 
-  // Estado: cancelada / no_show son flags que pueden aparecer como badge o etiqueta
-  const cancelada = /cancelada|cancelled/i.test(modalText);
-  const noShow = /no.show|no presentado/i.test(modalText);
+  const idMatch = modalText.match(/Id reserva\s+([\w-]+)/i)
+    || modalText.match(/Reserva\s+(\d+-\d+)/i);
+  const id_reserva = idMatch?.[1]?.trim() ?? '';
 
-  // Parseos
-  const fecha_in = parseDateESP(llegadaStr);
-  const fecha_out = parseDateESP(salidaStr);
-  const noches = diffNoches(fecha_in, fecha_out);
-  const importe_total = parseEuros(importeStr);
-  const anticipo = parseEuros(anticipoStr);
-  const pendiente_cobro = parseEuros(pendienteStr) || Math.max(0, importe_total - anticipo);
-  const importe_moneda = detectMoneda(importeStr);
-  const { nombre, apellidos } = splitNombre(huespedStr);
-  const num_huespedes = parseInt(numHuespedesStr.match(/\d+/)?.[0] ?? '', 10);
+  const localizadorMatch = modalText.match(/Localizador externo\s+(\S+)/i);
+  const localizador_externo = localizadorMatch?.[1]?.trim() || null;
+
+  const fechaResMatch = modalText.match(/Fecha Reserva\s+(\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{1,2}:\d{1,2})?)/i);
+  const fecha_reserva = fechaResMatch ? parseFechaISO(fechaResMatch[1]) : '';
+
+  const fechasMatch = modalText.match(/Entrada\s*-\s*Salida\s+(\d{1,2}\/\d{1,2}\/\d{4})\s*-\s*(\d{1,2}\/\d{1,2}\/\d{4})\s*\((\d+)\s*n/i);
+  const fecha_in = fechasMatch ? parseFechaDDMMYYYY(fechasMatch[1]) : '';
+  const fecha_out = fechasMatch ? parseFechaDDMMYYYY(fechasMatch[2]) : '';
+  const noches = fechasMatch ? parseInt(fechasMatch[3], 10) : 0;
+
+  const canalMatch = modalText.match(/Reserva desde\s+([^\n.]+?)(?:\s+Comisi|\n|$)/i);
+  const canal: Canal = canalMatch ? normalizarCanal(canalMatch[1]) : 'otro';
+
+  const habMatch = modalText.match(/Habitaci[oó]n\s+(\w+(?:\s+\w+)?)\s*\(/i)
+    || modalText.match(/Habitaci[oó]n\s+(\w+)/i);
+  const habitacion = habMatch ? normalizarHabitacion(habMatch[1]) : '';
+
+  const nombreMatch = modalText.match(/Nombre\s+([^\n]+?)(?:\s*Espa[ñn]ol|\n)/i);
+  const { nombre: huesped_nombre, apellidos: huesped_apellidos } = nombreMatch
+    ? splitNombre(nombreMatch[1])
+    : { nombre: '', apellidos: null };
+
+  const emailMatch = modalText.match(/email\s+(\S+@\S+\.\w+)/i);
+  const huesped_email = emailMatch?.[1]?.trim() || null;
+
+  const telMatch = modalText.match(/Tel[eé]fono\s+([+\d\s-]{6,20})/i);
+  const huesped_telefono = telMatch?.[1]?.trim().replace(/\s+/g, '') || null;
+
+  const importeMatch = modalText.match(/Importe de la reserva\s+([\d.,]+)\s*€/i);
+  const importe_total = importeMatch ? parseImporte(importeMatch[1]) : 0;
+
+  const pendienteMatch = modalText.match(/Pendiente de cobro\s+([\d.,]+)\s*€/i);
+  const pendiente_cobro = pendienteMatch ? parseImporte(pendienteMatch[1]) : 0;
+
+  const anticipoMatch = modalText.match(/Anticipo\s+(?:(Sin anticipo)|([\d.,]+)\s*€)/i);
+  const anticipo = anticipoMatch && anticipoMatch[2] ? parseImporte(anticipoMatch[2]) : 0;
+
+  // Estado cobro
+  let estado_cobro: EstadoCobro = 'pendiente';
+  if (importe_total > 0 && pendiente_cobro === 0) estado_cobro = 'cobrado';
+  else if (anticipo > 0 && pendiente_cobro > 0) estado_cobro = 'parcial';
+
+  // Estado reserva
+  let estado_reserva: EstadoReserva = 'confirmada';
+  if (modalText.match(/Reserva\s+anulada|estado:\s*Cancelada|Cancelada\s+por/i)) {
+    estado_reserva = 'cancelada';
+  } else if (fecha_out && new Date(fecha_out) < new Date()) {
+    estado_reserva = 'completada';
+  }
+
+  const formaPagoMatch = modalText.match(/Forma de pago\s+(\w+)/i);
+  const forma_pago = formaPagoMatch?.[1]?.toLowerCase() || null;
+
+  // num huéspedes (de "2 pax" o "2P Estándar")
+  const paxMatch = modalText.match(/(\d+)\s*pax/i) || modalText.match(/(\d+)P\s+Est/i);
+  const num_huespedes = paxMatch ? parseInt(paxMatch[1], 10) : null;
+
+  // Comentarios al final - extraer comentario del cliente
+  const comentarioMatch = modalText.match(/Comentario del Cliente:\s*([\s\S]+?)(?:Condiciones|---|$)/i);
+  const observaciones = comentarioMatch?.[1]?.trim().substring(0, 500) || null;
+
+  if (!id_reserva) {
+    log.warning(`parseModalReserva: no id_reserva detectado (modal text first 200 chars: ${modalText.substring(0, 200)})`);
+    return null;
+  }
+  if (!fecha_in || !fecha_out) {
+    log.warning(`Reserva ${id_reserva}: fechas vacías (in=${fecha_in}, out=${fecha_out})`);
+  }
 
   const reserva: ReservaScraped = {
-    id_reserva: idReserva,
-    localizador_externo: localizadorStr || null,
-    canal: mapCanal(canalStr),
-    habitacion: normalizeHabitacion(habitacionStr) as Habitacion | string,
+    id_reserva,
+    localizador_externo,
+    canal,
+    habitacion,
     fecha_in,
     fecha_out,
     noches,
-    huesped_nombre: nombre,
-    huesped_apellidos: apellidos,
-    huesped_email: emailStr.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)?.[0] ?? null,
-    huesped_telefono: telefonoStr.replace(/\s+/g, '').match(/^[+\d][\d]{6,}/)?.[0] ?? null,
-    huesped_pais: normalizePais(paisStr),
-    huesped_documento: docStr || null,
+    huesped_nombre,
+    huesped_apellidos,
+    huesped_email,
+    huesped_telefono,
+    huesped_pais: null,
+    huesped_documento: null,
     importe_total,
-    importe_moneda,
+    importe_moneda: 'EUR',
     anticipo,
     pendiente_cobro,
-    estado_reserva: inferEstadoReserva(fecha_in, fecha_out, cancelada, noShow),
-    estado_cobro: calcEstadoCobro(importe_total, anticipo, pendiente_cobro),
-    forma_pago: formaPagoStr || null,
-    factura_num: facturaStr.match(/\d+/)?.[0] ?? null,
-    fecha_reserva: parseDateTimeESP(fechaReservaStr),
-    observaciones: observacionesStr || null,
-    num_huespedes: Number.isFinite(num_huespedes) && num_huespedes > 0 ? num_huespedes : null,
-    _raw: {
-      modalText: modalText.slice(0, 2000), // primeros 2KB para debug
-    },
+    estado_reserva,
+    estado_cobro,
+    forma_pago,
+    factura_num: null,
+    fecha_reserva,
+    observaciones,
+    num_huespedes,
   };
-
-  // Validaciones mínimas
-  if (!reserva.fecha_in || !reserva.fecha_out) {
-    log.warning(`Reserva ${idReserva}: fechas vacías (in=${reserva.fecha_in}, out=${reserva.fecha_out})`);
-  }
 
   return reserva;
 }
