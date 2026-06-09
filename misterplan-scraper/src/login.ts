@@ -77,33 +77,85 @@ export interface LoginResult {
   error?: string;
 }
 
+async function dumpDebug(page: Page, label: string) {
+  try {
+    const store = await KeyValueStore.open('debug-screenshots');
+    const ts = Date.now();
+    const png = await page.screenshot({ fullPage: true, type: 'png' });
+    await store.setValue(`${label}-${ts}.png`, png, { contentType: 'image/png' });
+    const html = await page.content();
+    await store.setValue(`${label}-${ts}.html`, html, { contentType: 'text/html' });
+    const url = page.url();
+    await store.setValue(`${label}-${ts}.txt`, `URL: ${url}\nTITLE: ${await page.title()}`, { contentType: 'text/plain' });
+    log.info(`Debug saved as ${label}-${ts}.* (url=${url})`);
+  } catch (e: any) {
+    log.warning(`Debug dump failed: ${e.message}`);
+  }
+}
+
 export async function performLogin(
   page: Page,
   username: string,
   password: string
 ): Promise<LoginResult> {
-  log.info('Navigating to login page');
+  log.info(`Navigating to login page: ${URLS.LOGIN}`);
   await page.goto(URLS.LOGIN, { waitUntil: 'networkidle2', timeout: 30000 });
+  await dumpDebug(page, 'login-01-arrived');
 
-  // Type credentials. Probamos varios selectores por robustez frente a cambios menores
-  // del formulario MisterPlan.
-  const userSelector = 'input[name="username"], input[placeholder*="Usuario"], input[type="text"]';
-  const passSelector = 'input[name="password"], input[placeholder*="Contraseña"], input[type="password"]';
+  const finalUrl = page.url();
+  const pageTitle = await page.title();
+  log.info(`Login page arrived · url=${finalUrl} · title=${pageTitle}`);
 
-  await page.waitForSelector(userSelector, { timeout: 15000 });
+  // Inspeccionar qué inputs hay en la página
+  const inputsFound = await page.evaluate(() => {
+    return Array.from(document.querySelectorAll('input')).map((i) => ({
+      name: i.name,
+      type: i.type,
+      id: i.id,
+      placeholder: i.placeholder,
+      visible: (i as HTMLElement).offsetParent !== null,
+    }));
+  });
+  log.info(`Inputs found on page: ${JSON.stringify(inputsFound)}`);
+
+  // Type credentials. Probamos varios selectores por robustez.
+  const userSelector = 'input[name="username"], input[name="user"], input[name="login"], input[name="email"], input[placeholder*="Usuario"], input[placeholder*="usuario"], input[type="text"]:not([type="hidden"])';
+  const passSelector = 'input[name="password"], input[name="pass"], input[placeholder*="Contraseña"], input[placeholder*="contraseña"], input[type="password"]';
+
+  try {
+    await page.waitForSelector(userSelector, { timeout: 15000 });
+  } catch (err) {
+    log.error('No username field found');
+    await dumpDebug(page, 'login-02-no-user-field');
+    return {
+      success: false,
+      needsManualActivation: false,
+      error: `No username field found. URL=${finalUrl} Title=${pageTitle}`,
+    };
+  }
+
   await page.type(userSelector, username, { delay: 50 });
+  log.info('Username typed');
   await page.type(passSelector, password, { delay: 50 });
+  log.info('Password typed');
+  await dumpDebug(page, 'login-03-credentials-typed');
 
-  // Submit — botón o Enter
-  const submitSelector = 'button[type="submit"], input[type="submit"], button.btn-login';
+  // Submit
+  const submitSelector = 'button[type="submit"], input[type="submit"], button.btn-login, button:has-text("Iniciar"), button:has-text("Entrar"), button.btn-primary';
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => null),
     page.click(submitSelector).catch(() => page.keyboard.press('Enter')),
   ]);
+  await dumpDebug(page, 'login-04-after-submit');
+
+  const postUrl = page.url();
+  const postTitle = await page.title();
+  log.info(`Post-submit · url=${postUrl} · title=${postTitle}`);
 
   // Comprobaciones
   if (await needsActivation(page)) {
     log.warning('Device activation required — manual step needed');
+    await dumpDebug(page, 'login-05-needs-activation');
     return { success: false, needsManualActivation: true, error: 'Device not activated' };
   }
 
@@ -112,17 +164,23 @@ export async function performLogin(
     return { success: true, needsManualActivation: false };
   }
 
-  // Buscar mensajes de error visibles
-  const errMsg = await page.evaluate(() => {
-    const candidates = Array.from(document.querySelectorAll('.error, .alert-danger, .login-error, [class*="error"]'));
+  // Buscar mensajes de error visibles + body text para debug
+  const diagnostic = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll('.error, .alert-danger, .login-error, .alert, [class*="error"], [class*="invalid"]'));
     const visible = candidates.find((el) => (el as HTMLElement).offsetParent !== null);
-    return visible?.textContent?.trim() ?? null;
+    const bodyText = document.body.innerText.substring(0, 500);
+    return {
+      errorMsg: visible?.textContent?.trim() ?? null,
+      bodyText,
+    };
   });
+  log.error(`Login failed. Visible error: ${diagnostic.errorMsg}. Body preview: ${diagnostic.bodyText}`);
+  await dumpDebug(page, 'login-06-failed');
 
   return {
     success: false,
     needsManualActivation: false,
-    error: errMsg ?? 'Login failed — credentials rejected or unexpected page',
+    error: diagnostic.errorMsg ?? `Login failed at ${postUrl} (title: ${postTitle})`,
   };
 }
 
