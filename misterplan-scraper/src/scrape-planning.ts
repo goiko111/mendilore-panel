@@ -298,25 +298,70 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
 }
 
 async function closeModal(frame: Frame): Promise<void> {
+  // 1) Intentar click sobre cualquier botón cerrar visible (CSS válidos en Puppeteer)
   const closers = [
-    '.modal-reserva .btn-close',
-    '.modal-reserva .modal-cerrar',
-    'button:has-text("Cerrar")',
-    'button.close',
-    '[aria-label="Close"]',
+    '.modal.show .btn-close',
+    '.modal.show button.close',
+    '.modal.show [data-dismiss="modal"]',
+    '.modal.show [data-bs-dismiss="modal"]',
+    '.modal.show [aria-label="Close"]',
+    '.modal.in .btn-close',
+    '.modal.in button.close',
   ];
+  let clicked = false;
   for (const sel of closers) {
     try {
-      await frame.click(sel, { delay: 30 });
-      await new Promise((r) => setTimeout(r, 200));
-      return;
+      const el = await frame.$(sel);
+      if (el) {
+        await el.click({ delay: 30 });
+        clicked = true;
+        break;
+      }
     } catch { /* try next */ }
   }
-  // Fallback: ESC
-  await frame.evaluate(() => {
-    const evt = new KeyboardEvent('keydown', { key: 'Escape' });
-    document.dispatchEvent(evt);
-  });
+  // 2) Si no clickeó, buscar botón por texto via evaluate
+  if (!clicked) {
+    try {
+      clicked = await frame.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('.modal.show button, .modal.in button, .modal[style*="display: block"] button')) as HTMLElement[];
+        const cerrar = btns.find((b) => /cerrar|close/i.test(b.textContent || '') || b.classList.contains('close') || b.getAttribute('aria-label') === 'Close');
+        if (cerrar) {
+          cerrar.click();
+          return true;
+        }
+        return false;
+      });
+    } catch { /* ignore */ }
+  }
+  // 3) Fallback: ESC en window + ocultar modal manualmente
+  if (!clicked) {
+    await frame.evaluate(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', which: 27, keyCode: 27, bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', which: 27, keyCode: 27, bubbles: true }));
+      // Hard close: quitar clase show + backdrop
+      document.querySelectorAll('.modal.show, .modal.in').forEach((m) => {
+        (m as HTMLElement).classList.remove('show', 'in');
+        (m as HTMLElement).style.display = 'none';
+      });
+      document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
+      document.body.classList.remove('modal-open');
+      (document.body as HTMLElement).style.overflow = '';
+    });
+  }
+  // 4) Esperar a que .modal.show desaparezca (máx 1s)
+  try {
+    await frame.waitForFunction(() => {
+      return !document.querySelector('.modal.show, .modal.in, .modal[style*="display: block"]');
+    }, { timeout: 1000 });
+  } catch { /* modal still open — try one more hard close */
+    await frame.evaluate(() => {
+      document.querySelectorAll('.modal').forEach((m) => {
+        (m as HTMLElement).classList.remove('show', 'in');
+        (m as HTMLElement).style.display = 'none';
+      });
+      document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
+    });
+  }
 }
 
 export async function scrapePlanning(
@@ -408,3 +453,4 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
