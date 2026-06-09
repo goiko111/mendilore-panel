@@ -59,8 +59,16 @@ async function main() {
   let reservas: ReservaScraped[] = [];
   let sessionRefreshed = false;
 
+  // Chrome path: Apify image lo tiene en /usr/bin/google-chrome, también respeta APIFY_CHROME_EXECUTABLE_PATH y PUPPETEER_EXECUTABLE_PATH
+  const chromePath =
+    process.env.APIFY_CHROME_EXECUTABLE_PATH ||
+    process.env.PUPPETEER_EXECUTABLE_PATH ||
+    '/usr/bin/google-chrome';
+  log.info(`Launching Chrome from: ${chromePath}`);
+
   const browser = await puppeteer.launch({
     headless,
+    executablePath: chromePath,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
