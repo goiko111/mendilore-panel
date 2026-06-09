@@ -65,6 +65,71 @@ export default async function MetricasPage() {
   }
   const hayComparativa = totalNochesYA > 0;
 
+  // ===========================
+  // KPIs MrPlan: Lead time, Cancel rate, Pace, Channel mix
+  // ===========================
+  const hace90d = new Date(today.getTime() - 90 * 86400_000).toISOString();
+  const hace7d = new Date(today.getTime() - 7 * 86400_000).toISOString();
+  const inicioMes = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+  const finMes = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const hace30d = new Date(today.getTime() - 30 * 86400_000).toISOString().slice(0, 10);
+  const todayStr = today.toISOString().slice(0, 10);
+
+  // Lead time: días entre created_at y fecha_in (reservas confirmadas últimos 90d)
+  const { data: leadRows } = await supabase
+    .from("reservas")
+    .select("fecha_in, created_at, estado_cobro")
+    .gte("created_at", hace90d)
+    .neq("estado_cobro", "cancelado");
+  const leadTimes = (leadRows ?? [])
+    .map((r) => {
+      const ci = new Date(r.fecha_in as string).getTime();
+      const ca = new Date(r.created_at as string).getTime();
+      return (ci - ca) / 86400_000;
+    })
+    .filter((d) => d >= 0 && d <= 365);
+  const leadTimeMedio = leadTimes.length > 0 ? leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length : 0;
+
+  // Cancel rate: este mes natural
+  const { data: mesRows } = await supabase
+    .from("reservas")
+    .select("estado_cobro")
+    .gte("fecha_in", inicioMes)
+    .lte("fecha_in", finMes);
+  const totalMes = (mesRows ?? []).length;
+  const canceladasMes = (mesRows ?? []).filter((r) => r.estado_cobro === "cancelado").length;
+  const cancelRate = totalMes > 0 ? (canceladasMes / totalMes) * 100 : 0;
+
+  // Pace: bookings creados últimos 7d para fechas futuras
+  const { data: paceRows } = await supabase
+    .from("reservas")
+    .select("id, importe_total, fecha_in")
+    .gte("created_at", hace7d)
+    .gte("fecha_in", todayStr)
+    .neq("estado_cobro", "cancelado");
+  const paceCount = (paceRows ?? []).length;
+  const paceRevenue = (paceRows ?? []).reduce((sum, r) => sum + Number(r.importe_total ?? 0), 0);
+
+  // Channel mix: ingresos por canal últimos 30d
+  const { data: canalRows } = await supabase
+    .from("reservas")
+    .select("canal, importe_total")
+    .gte("fecha_in", hace30d)
+    .lte("fecha_in", todayStr)
+    .neq("estado_cobro", "cancelado");
+  const canalMap = new Map<string, { count: number; revenue: number }>();
+  (canalRows ?? []).forEach((r) => {
+    const k = (r.canal as string) || "Sin canal";
+    const acc = canalMap.get(k) ?? { count: 0, revenue: 0 };
+    acc.count += 1;
+    acc.revenue += Number(r.importe_total ?? 0);
+    canalMap.set(k, acc);
+  });
+  const channelMix = Array.from(canalMap.entries())
+    .map(([canal, v]) => ({ canal, ...v }))
+    .sort((a, b) => b.revenue - a.revenue);
+  const totalChannelRevenue = channelMix.reduce((s, c) => s + c.revenue, 0);
+
   // Recortar el rango del gráfico a la ventana con datos relevantes
   // (primer día con reserva → último día con reserva + 7d de margen)
   const diasConDatos = (metricasChart ?? []).filter((m) => Number(m.habitaciones_ocupadas ?? 0) > 0);
@@ -128,40 +193,71 @@ export default async function MetricasPage() {
         </div>
       )}
 
-      {/* GA4 — visitas web (Looker Studio embed) */}
+      {/* KPIs operacionales MrPlan: Lead time / Cancel rate / Pace */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <StatCard
+          label="Lead time medio"
+          value={leadTimes.length > 0 ? `${leadTimeMedio.toFixed(1)} d` : "—"}
+          hint={leadTimes.length > 0 ? `${leadTimes.length} reservas últ. 90 d` : "Sin datos"}
+        />
+        <StatCard
+          label="Cancel rate (mes)"
+          value={totalMes > 0 ? `${cancelRate.toFixed(1)}%` : "—"}
+          hint={totalMes > 0 ? `${canceladasMes} canceladas de ${totalMes}` : "Sin reservas este mes"}
+        />
+        <StatCard
+          label="Pace 7 d → futuro"
+          value={String(paceCount)}
+          hint={paceCount > 0 ? `${formatCurrency(paceRevenue)} pipeline futuro` : "Sin reservas nuevas"}
+        />
+      </div>
+
+      {/* Channel mix: distribución revenue por canal últimos 30 d */}
+      {channelMix.length > 0 && totalChannelRevenue > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5 mb-6">
+          <h2 className="text-base font-semibold text-foreground mb-1">Channel mix — últimos 30 días</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Distribución de ingresos por canal de origen · {formatCurrency(totalChannelRevenue)} totales · {(canalRows ?? []).length} reservas
+          </p>
+          <div className="space-y-3">
+            {channelMix.map((c) => {
+              const pct = (c.revenue / totalChannelRevenue) * 100;
+              return (
+                <div key={c.canal}>
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="font-medium text-foreground capitalize">{c.canal}</span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {formatCurrency(c.revenue)} · {pct.toFixed(0)}% · {c.count} resv.
+                    </span>
+                  </div>
+                  <div className="h-2 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* GA4 visitas web — CTA externo a Looker Studio (no embed por limitación de cookies de terceros) */}
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex-1">
             <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
             <p className="text-xs text-muted-foreground">
-              Datos en directo de GA4 vía Looker Studio · sesiones, usuarios, top pages, fuente de tráfico
+              Sesiones, usuarios, top pages y fuentes de tráfico en directo desde GA4 (informe Looker Studio).
             </p>
           </div>
           <a
             href="https://lookerstudio.google.com/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
             target="_blank"
             rel="noopener noreferrer"
-            className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap"
+            className="shrink-0 inline-flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:opacity-90 transition-opacity whitespace-nowrap"
           >
-            Abrir en Looker Studio ↗
+            Abrir Looker Studio ↗
           </a>
         </div>
-        <div className="rounded-lg overflow-hidden border border-border bg-muted/30">
-          <iframe
-            src="https://lookerstudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/y2b0F"
-            width="100%"
-            height="480"
-            frameBorder="0"
-            allowFullScreen
-            sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
-            title="GA4 Looker Studio Casa Mendilore"
-            referrerPolicy="no-referrer-when-downgrade"
-          />
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-3 italic">
-          Si el iframe muestra &ldquo;No has iniciado sesión&rdquo;, asegúrate de tener una cuenta Google abierta en este navegador
-          (Gmail / YouTube). Es una limitación de Looker Studio. Como alternativa, abre el informe en una pestaña nueva con el enlace de arriba.
-        </p>
       </div>
 
       {!porSemana || porSemana.length === 0 ? (
