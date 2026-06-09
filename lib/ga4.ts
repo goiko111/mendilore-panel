@@ -193,33 +193,55 @@ export interface GA4Snapshot {
   usuarios: number;
   pageviews: number;
   bounceRate: number; // 0..1
+  // Comparativa 30d previos (60d→30d ago vs 30d→today)
+  sesionesPrev: number;
+  usuariosPrev: number;
+  // Engagement
+  engagementRate: number; // 0..1
+  sessionDuration: number; // segundos
+  // Eventos clave de conversión (configurables vía nombre evento)
+  conversiones: { evento: string; total: number }[];
+  // Distribución por dispositivo
+  dispositivos: { tipo: string; sesiones: number }[];
+  // Top países
+  paises: { pais: string; sesiones: number }[];
   topPaginas: { ruta: string; views: number }[];
   topFuentes: { fuente: string; sesiones: number }[];
-  serieDiaria: { fecha: string; sesiones: number }[];
+  serieDiaria: { fecha: string; sesiones: number; usuarios: number }[];
 }
 
 export async function fetchGA4Snapshot(): Promise<GA4Snapshot | null> {
   if (!ga4Configured()) return null;
 
   try {
-    // 1. KPIs totales 30d
+    // 1. KPIs totales 30d + engagement
     const totals = await runGA4Report({
-      metrics: ["sessions", "totalUsers", "screenPageViews", "bounceRate"],
+      metrics: ["sessions", "totalUsers", "screenPageViews", "bounceRate", "engagementRate", "averageSessionDuration"],
       dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
     });
-
     const tRow = totals?.rows?.[0]?.metricValues ?? [];
     const sesiones = Number(tRow[0]?.value ?? 0);
     const usuarios = Number(tRow[1]?.value ?? 0);
     const pageviews = Number(tRow[2]?.value ?? 0);
     const bounceRate = Number(tRow[3]?.value ?? 0);
+    const engagementRate = Number(tRow[4]?.value ?? 0);
+    const sessionDuration = Number(tRow[5]?.value ?? 0);
 
-    // 2. Top páginas 30d
+    // 2. Comparativa: 30d previos (días 60..31 atrás)
+    const prev = await runGA4Report({
+      metrics: ["sessions", "totalUsers"],
+      dateRanges: [{ startDate: "60daysAgo", endDate: "31daysAgo" }],
+    });
+    const pRow = prev?.rows?.[0]?.metricValues ?? [];
+    const sesionesPrev = Number(pRow[0]?.value ?? 0);
+    const usuariosPrev = Number(pRow[1]?.value ?? 0);
+
+    // 3. Top páginas 30d (mejorado: 10 en lugar de 5)
     const pagesReport = await runGA4Report({
       dimensions: ["pagePath"],
       metrics: ["screenPageViews"],
       dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
-      limit: 5,
+      limit: 10,
       orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
     });
     const topPaginas = (pagesReport?.rows ?? []).map((r) => ({
@@ -227,12 +249,12 @@ export async function fetchGA4Snapshot(): Promise<GA4Snapshot | null> {
       views: Number(r.metricValues[0]?.value ?? 0),
     }));
 
-    // 3. Top fuentes 30d
+    // 4. Top fuentes 30d
     const sourcesReport = await runGA4Report({
       dimensions: ["sessionSource"],
       metrics: ["sessions"],
       dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
-      limit: 5,
+      limit: 8,
       orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
     });
     const topFuentes = (sourcesReport?.rows ?? []).map((r) => ({
@@ -240,22 +262,71 @@ export async function fetchGA4Snapshot(): Promise<GA4Snapshot | null> {
       sesiones: Number(r.metricValues[0]?.value ?? 0),
     }));
 
-    // 4. Serie diaria 30d
+    // 5. Serie diaria 30d (añadimos usuarios además de sesiones)
     const daily = await runGA4Report({
       dimensions: ["date"],
-      metrics: ["sessions"],
+      metrics: ["sessions", "totalUsers"],
       dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
       orderBys: [{ dimension: { dimensionName: "date" } }],
     });
     const serieDiaria = (daily?.rows ?? []).map((r) => ({
       fecha: r.dimensionValues[0]?.value ?? "",
       sesiones: Number(r.metricValues[0]?.value ?? 0),
+      usuarios: Number(r.metricValues[1]?.value ?? 0),
     }));
 
-    return { sesiones, usuarios, pageviews, bounceRate, topPaginas, topFuentes, serieDiaria };
+    // 6. Dispositivos 30d
+    const devices = await runGA4Report({
+      dimensions: ["deviceCategory"],
+      metrics: ["sessions"],
+      dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+    });
+    const dispositivos = (devices?.rows ?? []).map((r) => ({
+      tipo: r.dimensionValues[0]?.value ?? "",
+      sesiones: Number(r.metricValues[0]?.value ?? 0),
+    })).sort((a, b) => b.sesiones - a.sesiones);
+
+    // 7. Top países 30d
+    const countries = await runGA4Report({
+      dimensions: ["country"],
+      metrics: ["sessions"],
+      dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+      limit: 8,
+      orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+    });
+    const paises = (countries?.rows ?? []).map((r) => ({
+      pais: r.dimensionValues[0]?.value ?? "",
+      sesiones: Number(r.metricValues[0]?.value ?? 0),
+    }));
+
+    // 8. Conversiones (eventos clave) 30d — captura whatsapp_click, click_booking, etc.
+    const events = await runGA4Report({
+      dimensions: ["eventName"],
+      metrics: ["eventCount"],
+      dateRanges: [{ startDate: "30daysAgo", endDate: "today" }],
+      limit: 15,
+      orderBys: [{ metric: { metricName: "eventCount" }, desc: true }],
+    });
+    // Filtramos a eventos "interesantes" (no page_view ni first_visit ni session_start)
+    const eventosBoring = new Set(["page_view", "first_visit", "session_start", "user_engagement", "scroll", "click"]);
+    const conversiones = (events?.rows ?? [])
+      .map((r) => ({
+        evento: r.dimensionValues[0]?.value ?? "",
+        total: Number(r.metricValues[0]?.value ?? 0),
+      }))
+      .filter((e) => !eventosBoring.has(e.evento) && e.total > 0)
+      .slice(0, 8);
+
+    return {
+      sesiones, usuarios, pageviews, bounceRate,
+      sesionesPrev, usuariosPrev,
+      engagementRate, sessionDuration,
+      conversiones,
+      dispositivos,
+      paises,
+      topPaginas, topFuentes, serieDiaria,
+    };
   } catch (err) {
-    // Si la conexión GA4 falla, mejor devolver null y que el caller muestre placeholder
-    // que romper la página entera.
     console.error("GA4 snapshot fetch failed:", err);
     return null;
   }
