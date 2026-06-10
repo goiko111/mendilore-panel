@@ -155,6 +155,18 @@ export default async function DashboardPage() {
   // KPIs adicionales (huéspedes etc) — calculo bajo demanda en cliente
   // Por ahora paso solo los más útiles
 
+  // Cobrado este mes + Tasa de cobro
+  const { data: reservasMes } = await supabase
+    .from("reservas")
+    .select("estado_cobro, importe_total")
+    .gte("fecha_in", startMonth)
+    .lte("fecha_in", todayStr)
+    .neq("estado_reserva", "cancelada");
+  const cobradoMes = (reservasMes ?? []).filter((r: any) => r.estado_cobro === "cobrado").reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
+  const totalReservasMes = (reservasMes ?? []).length;
+  const cobradasMes = (reservasMes ?? []).filter((r: any) => r.estado_cobro === "cobrado").length;
+  const tasaCobro = totalReservasMes > 0 ? (cobradasMes / totalReservasMes) * 100 : null;
+
   const kpisData = {
     // Operacionales
     checkins_hoy: { value: cntCheckinsHoy ?? 0, detail: (checkinsHoy ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
@@ -172,7 +184,9 @@ export default async function DashboardPage() {
     pace_7d: { value: cntPace7d ?? 0 },
     cobros_pendientes_total: { value: cobrosTotalImporte },
     // Operación
-    reservas_nuevas_hoy: { value: cntReservasHoy ?? 0 }
+    reservas_nuevas_hoy: { value: cntReservasHoy ?? 0 },
+    cobrado_mes: { value: cobradoMes },
+    tasa_cobro: { value: tasaCobro, cobradas: cobradasMes, total: totalReservasMes }
   };
 
   return (
