@@ -25,6 +25,7 @@ type SearchParams = {
   canal?: string;
   desde?: string;
   hasta?: string;
+  id?: string;
   t?: Tiempo;
 };
 
@@ -51,6 +52,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
   if (sp.canal) query = query.eq("canal", sp.canal);
   if (sp.desde) query = query.gte("fecha_in", sp.desde);
   if (sp.hasta) query = query.lte("fecha_in", sp.hasta);
+  if (sp.id) query = query.eq("id", sp.id);
 
   const { data: reservasRaw } = await query;
 
