@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target } from "lucide-react";
+import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target, Database } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,7 @@ const items = [
   { href: "/competencia", label: "Competencia", icon: TrendingUp },
   { href: "/notificaciones", label: "Notificaciones", icon: Bell, badge: true },
   { href: "/objetivos", label: "Objetivos", icon: Target },
+  { href: "/datos-disponibles", label: "Datos disponibles", icon: Database },
   { href: "/configuracion", label: "Configuración", icon: Settings }
 ];
 
