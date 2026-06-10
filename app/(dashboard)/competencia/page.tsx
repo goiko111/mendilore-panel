@@ -163,6 +163,42 @@ export default async function CompetenciaPage() {
   alertasMovimiento.sort((a, b) => Math.abs(b.delta_pct) - Math.abs(a.delta_pct));
   const alertasTop = alertasMovimiento.slice(0, 8);
 
+
+  // ===========================
+  // Tendencias por competidor: serie precio_medio diario últimos 60d
+  // Para sparklines en la sección Tendencias
+  // ===========================
+  type Tendencia = { competidor_id: string; nombre: string; serie: { fecha: string; precio: number }[]; precio_actual: number | null; precio_hace30d: number | null; delta_pct: number | null };
+  const tendenciasPorCompetidor: Tendencia[] = [];
+  (competidores ?? []).forEach((c: any) => {
+    // Recolectar precios diarios (todos los snapshots disponibles del competidor)
+    const preciosPorFecha = new Map<string, number[]>();
+    (snapshots ?? []).forEach((s: any) => {
+      if (s.competidor_id !== c.id || !s.disponible || !s.precio_por_noche) return;
+      const fecha = s.fecha_snapshot as string;
+      const arr = preciosPorFecha.get(fecha) ?? [];
+      arr.push(Number(s.precio_por_noche));
+      preciosPorFecha.set(fecha, arr);
+    });
+    // Promediar por fecha y ordenar
+    const serie = Array.from(preciosPorFecha.entries())
+      .map(([fecha, ps]) => ({ fecha, precio: ps.reduce((a, b) => a + b, 0) / ps.length }))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    if (serie.length === 0) return;
+    const actual = serie[serie.length - 1].precio;
+    const hoy = new Date(serie[serie.length - 1].fecha).getTime();
+    const hace30d = serie.find(s => new Date(s.fecha).getTime() >= hoy - 30 * 86400_000)?.precio ?? null;
+    const delta = hace30d && hace30d > 0 ? ((actual - hace30d) / hace30d) * 100 : null;
+    tendenciasPorCompetidor.push({
+      competidor_id: c.id,
+      nombre: c.nombre,
+      serie,
+      precio_actual: actual,
+      precio_hace30d: hace30d,
+      delta_pct: delta
+    });
+  });
+
   return (
     <div>
       <PageHeader
@@ -206,6 +242,70 @@ export default async function CompetenciaPage() {
         </div>
       )}
 
+
+
+      {/* Tendencias por competidor — sparklines últimos snapshots */}
+      {tendenciasPorCompetidor.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5 mb-5">
+          <h2 className="text-base font-semibold text-foreground mb-1">📈 Tendencias por competidor</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Evolución del precio medio por noche en los snapshots recientes · sparkline + cambio 30d
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {tendenciasPorCompetidor.map((t) => {
+              const min = Math.min(...t.serie.map(s => s.precio));
+              const max = Math.max(...t.serie.map(s => s.precio));
+              const rango = max - min || 1;
+              const W = 200;
+              const H = 40;
+              const puntos = t.serie.map((s, i) => {
+                const x = (i / Math.max(1, t.serie.length - 1)) * W;
+                const y = H - ((s.precio - min) / rango) * H;
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+              }).join(" ");
+              const colorLinea = t.delta_pct === null ? "#6b7280" : t.delta_pct > 5 ? "#ea580c" : t.delta_pct < -5 ? "#059669" : "#6b7280";
+              const sign = t.delta_pct && t.delta_pct > 0 ? "+" : "";
+              return (
+                <div key={t.competidor_id} className="rounded-lg border border-border p-3 bg-muted/10">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="font-medium text-foreground text-sm truncate flex-1">{t.nombre}</div>
+                    <div className="text-xs text-right shrink-0">
+                      {t.precio_actual !== null && (
+                        <div className="font-semibold text-foreground">{formatCurrency(t.precio_actual, "EUR")}/n</div>
+                      )}
+                      {t.delta_pct !== null && (
+                        <div className={t.delta_pct > 5 ? "text-orange-700 dark:text-orange-400 font-medium" : t.delta_pct < -5 ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-muted-foreground"}>
+                          {sign}{t.delta_pct.toFixed(1)}% vs 30d
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <svg width="100%" height="40" viewBox="0 0 200 40" preserveAspectRatio="none" className="overflow-visible">
+                    <polyline
+                      points={puntos}
+                      fill="none"
+                      stroke={colorLinea}
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    {t.serie.slice(-1).map((p, i) => {
+                      const x = W;
+                      const y = H - ((p.precio - min) / rango) * H;
+                      return <circle key={i} cx={x} cy={y} r="2.5" fill={colorLinea} />;
+                    })}
+                  </svg>
+                  <div className="text-[10px] text-muted-foreground mt-1 flex items-center justify-between">
+                    <span>min {formatCurrency(min, "EUR")}</span>
+                    <span>{t.serie.length} snapshots</span>
+                    <span>max {formatCurrency(max, "EUR")}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {!competidores || competidores.length === 0 ? (
         <EmptyState
