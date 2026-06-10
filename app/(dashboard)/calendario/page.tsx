@@ -101,7 +101,7 @@ export default async function CalendarioPage({ searchParams }: { searchParams: P
                     return (
                       <td key={d.fecha} className={`px-0 py-1 text-center ${d.weekend && !r ? "bg-amber-50/30 dark:bg-amber-950/10" : ""} ${d.fecha === today && !r ? "bg-emerald-50 dark:bg-emerald-950/30" : ""}`} style={{ width: "32px", height: "44px" }}>
                         {r ? (
-                          <Link href={`/reservas?q=${r.id.slice(0,8)}`} className="block h-full px-1" title={`${r.huespedes?.nombre ?? '—'} · ${formatCurrency(Number(r.importe_total ?? 0))}`}>
+                          <Link href={`/reservas?id=${r.id}`} className="block h-full px-1" title={`${r.huespedes?.nombre ?? '—'} · ${formatCurrency(Number(r.importe_total ?? 0))}`}>
                             <div className={`h-full rounded ${startsHere ? "bg-primary text-primary-foreground" : "bg-primary/40"} flex items-center justify-center text-[10px] truncate`}>
                               {startsHere ? (r.huespedes?.nombre?.charAt(0) || "•") : "•"}
                             </div>
