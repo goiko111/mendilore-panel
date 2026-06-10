@@ -22,6 +22,33 @@
  * Cachea el access token durante 50 min (Google los emite a 1h).
  */
 
+import { getRequestContext } from "@cloudflare/next-on-pages";
+
+/**
+ * Obtiene env vars accesibles tanto desde Cloudflare Pages runtime
+ * (bindings via getRequestContext) como en desarrollo local (process.env).
+ *
+ * CF Pages NO inyecta Secrets en process.env por defecto para Edge runtime.
+ * Hay que acceder vía getRequestContext().env, que devuelve el binding.
+ */
+function getEnv(): { GA4_SA_JSON?: string; GA4_PROPERTY_ID?: string } {
+  // En request scope (Server Component, Route Handler), usar getRequestContext
+  try {
+    const ctx = getRequestContext();
+    const env = ctx.env as Record<string, string | undefined>;
+    return {
+      GA4_SA_JSON: env.GA4_SA_JSON,
+      GA4_PROPERTY_ID: env.GA4_PROPERTY_ID,
+    };
+  } catch {
+    // Fallback (build time, dev local con .env)
+    return {
+      GA4_SA_JSON: getEnv().GA4_SA_JSON,
+      GA4_PROPERTY_ID: getEnv().GA4_PROPERTY_ID,
+    };
+  }
+}
+
 interface ServiceAccount {
   client_email: string;
   private_key: string;
@@ -129,7 +156,7 @@ async function getAccessToken(sa: ServiceAccount): Promise<string> {
 }
 
 function parseServiceAccount(): ServiceAccount | null {
-  const raw = process.env.GA4_SA_JSON;
+  const raw = getEnv().GA4_SA_JSON;
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as ServiceAccount;
@@ -145,12 +172,12 @@ function parseServiceAccount(): ServiceAccount | null {
 }
 
 export function ga4Configured(): boolean {
-  return Boolean(process.env.GA4_SA_JSON && process.env.GA4_PROPERTY_ID);
+  return Boolean(getEnv().GA4_SA_JSON && getEnv().GA4_PROPERTY_ID);
 }
 
 export async function runGA4Report(req: RunReportRequest): Promise<RunReportResponse | null> {
   const sa = parseServiceAccount();
-  const propertyId = process.env.GA4_PROPERTY_ID;
+  const propertyId = getEnv().GA4_PROPERTY_ID;
   if (!sa || !propertyId) return null;
 
   const token = await getAccessToken(sa);
