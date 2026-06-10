@@ -1,5 +1,6 @@
 export const runtime = 'edge';
 
+import Link from "next/link";
 import { CalendarRange, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, StatCard, EmptyState } from "@/components/page-header";
@@ -7,25 +8,43 @@ import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 
 export const metadata = { title: "Resumen" };
 
-export default async function DashboardPage() {
+type Period = "7d" | "30d" | "90d" | "365d";
+const PERIODS: { key: Period; label: string; days: number }[] = [
+  { key: "7d", label: "7 días", days: 7 },
+  { key: "30d", label: "30 días", days: 30 },
+  { key: "90d", label: "90 días", days: 90 },
+  { key: "365d", label: "1 año", days: 365 }
+];
+
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
+  const params = await searchParams;
+  const selected: Period = (PERIODS.find(p => p.key === params.p)?.key ?? "30d") as Period;
+  const days = PERIODS.find(p => p.key === selected)!.days;
+
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);
   const in14Days = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
-  const in30Days = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
+  const inNDays = new Date(Date.now() + days * 86400_000).toISOString().slice(0, 10);
 
-  // KPIs hoy (vista metricas_dia)
+  // KPIs hoy
   const { data: metricaHoy } = await supabase.from("metricas_dia").select("*").eq("fecha", today).single();
 
-  // Reservas próximos 30 días
+  // Reservas próximos N días
   const { data: reservasProximas, count } = await supabase
     .from("reservas")
     .select("id, habitacion, fecha_in, fecha_out, importe_total, importe_moneda, estado_cobro, canal, huespedes(nombre)", { count: "exact" })
     .gte("fecha_in", today)
-    .lte("fecha_in", in30Days)
-    .order("fecha_in", { ascending: true })
-    .limit(8);
+    .lte("fecha_in", inNDays)
+    .order("fecha_in", { ascending: true });
 
-  // Cobros pendientes con check-in en los próximos 14 días (ventana de cobro 14d - propuesta v4 sección 3.3)
+  // Agregados próximos N días
+  const ingresosFuturos = (reservasProximas ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
+  const nochesFuturas = (reservasProximas ?? []).reduce((s: number, r: any) => {
+    const n = Math.round((new Date(r.fecha_out).getTime() - new Date(r.fecha_in).getTime()) / 86400_000);
+    return s + n;
+  }, 0);
+
+  // Cobros pendientes próximos 14 días
   const { data: cobrosPendientes } = await supabase
     .from("reservas")
     .select("id, habitacion, fecha_in, importe_total, importe_moneda, canal, huespedes(nombre)")
@@ -42,15 +61,15 @@ export default async function DashboardPage() {
         description={`Casa Mendilore · ${formatDate(today, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Ocupación hoy" value={formatPercent(metricaHoy?.occupancy_pct)} hint={`${metricaHoy?.habitaciones_ocupadas ?? 0} / ${metricaHoy?.habitaciones_totales ?? 6} habitaciones`} />
         <StatCard label="ADR hoy" value={formatCurrency(metricaHoy?.adr)} hint="Tarifa media por habitación" />
         <StatCard label="RevPAR hoy" value={formatCurrency(metricaHoy?.revpar)} hint="Ingreso por habitación disponible" />
-        <StatCard label="Reservas próximas" value={String(count ?? 0)} hint="Entradas próximos 30 días" />
+        <StatCard label={`Reservas próx. ${days}d`} value={String(count ?? 0)} hint={`${formatCurrency(ingresosFuturos)} · ${nochesFuturas} noches`} />
       </div>
 
       {cobrosPendientes && cobrosPendientes.length > 0 && (
-        <div className="bg-card border border-border rounded-xl mb-8">
+        <div className="bg-card border border-border rounded-xl mb-6">
           <div className="px-5 py-4 border-b border-border flex items-center gap-2">
             <AlertTriangle className="size-5 text-amber-600 dark:text-amber-400" />
             <div className="flex-1">
@@ -99,16 +118,33 @@ export default async function DashboardPage() {
       )}
 
       <div className="bg-card border border-border rounded-xl">
-        <div className="px-5 py-4 border-b border-border">
-          <h2 className="text-base font-semibold text-foreground">Próximas entradas</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Reservas con check-in en los próximos 30 días</p>
+        <div className="px-5 py-4 border-b border-border flex flex-wrap items-center gap-3 justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Próximas entradas</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Reservas con check-in en los próximos {days} días</p>
+          </div>
+          <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-0.5 border border-border">
+            {PERIODS.map((p) => (
+              <Link
+                key={p.key}
+                href={`/dashboard?p=${p.key}`}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition ${
+                  selected === p.key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+              >
+                {p.label}
+              </Link>
+            ))}
+          </div>
         </div>
 
         {!reservasProximas || reservasProximas.length === 0 ? (
           <div className="p-6">
             <EmptyState
               title="Aún no hay reservas"
-              description="Cuando integremos MisterPlan, las reservas aparecerán aquí automáticamente. Mientras tanto puedes añadirlas manualmente desde Reservas."
+              description={`No hay check-ins en los próximos ${days} días. Cambia el rango temporal arriba a la derecha para ver más.`}
               icon={<CalendarRange className="size-5" />}
             />
           </div>
