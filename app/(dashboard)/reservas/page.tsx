@@ -96,7 +96,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader
         title="Reservas"
-        description={`${reservas.length} reservas · ${totalNoches} noches · ${formatCurrency(totalImporte)} · ${totalFuturas} futuras / ${totalPasadas} pasadas`}
+        description={`${reservas.length} reservas · ${totalNoches} noches · ${formatCurrency(totalImporte)} total · ✅ ${formatCurrency(totalCobrado)} cobrado · 🟡 ${formatCurrency(totalPendiente)} pendiente · ${totalFuturas} futuras / ${totalPasadas} pasadas`}
         actions={
           <Link
             href={exportUrl}
