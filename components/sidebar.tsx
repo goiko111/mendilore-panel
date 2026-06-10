@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -13,15 +13,15 @@ const items = [
   { href: "/huespedes", label: "Huéspedes", icon: Users },
   { href: "/metricas", label: "Métricas", icon: LineChart },
   { href: "/competencia", label: "Competencia", icon: TrendingUp },
+  { href: "/notificaciones", label: "Notificaciones", icon: Bell, badge: true },
   { href: "/configuracion", label: "Configuración", icon: Settings }
 ];
 
-export function Sidebar({ userEmail }: { userEmail?: string | null }) {
+export function Sidebar({ userEmail, unreadCount = 0 }: { userEmail?: string | null; unreadCount?: number }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
-  // Cerrar el drawer cuando cambie la ruta
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -46,7 +46,7 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {items.map(({ href, label, icon: Icon }) => {
+        {items.map(({ href, label, icon: Icon, badge }) => {
           const isActive = pathname === href || pathname?.startsWith(href + "/");
           return (
             <Link
@@ -60,7 +60,12 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
               )}
             >
               <Icon className="size-4 shrink-0" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {badge && unreadCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-semibold bg-amber-500 text-white">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -86,7 +91,6 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
 
   return (
     <>
-      {/* Top bar mobile */}
       <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 bg-card border-b border-border px-4 py-3">
         <button
           onClick={() => setOpen(true)}
@@ -94,21 +98,30 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
           aria-label="Abrir menú"
         >
           <Menu className="size-5" />
+          {unreadCount > 0 && (
+            <span className="absolute size-2 rounded-full bg-amber-500 -translate-y-2 translate-x-2" />
+          )}
         </button>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <div className="size-7 rounded-full bg-gradient-to-br from-emerald-700 to-emerald-900 flex items-center justify-center text-white font-serif text-sm shrink-0" aria-label="Casa Mendilore">
             M
           </div>
           <div className="text-sm font-semibold text-foreground truncate">Casa Mendilore</div>
         </div>
+        {unreadCount > 0 && (
+          <Link href="/notificaciones" className="relative inline-flex items-center justify-center size-9 rounded-md hover:bg-muted">
+            <Bell className="size-5" />
+            <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-semibold bg-amber-500 text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          </Link>
+        )}
       </div>
 
-      {/* Desktop sidebar fijo */}
       <aside className="hidden lg:flex w-60 shrink-0 border-r border-border bg-card flex-col h-screen sticky top-0">
         {navContent}
       </aside>
 
-      {/* Mobile drawer overlay */}
       {open && (
         <div
           className="lg:hidden fixed inset-0 z-40 bg-black/40"
@@ -117,7 +130,6 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
         />
       )}
 
-      {/* Mobile drawer */}
       <aside
         className={cn(
           "lg:hidden fixed top-0 left-0 z-50 h-screen w-72 max-w-[85vw] border-r border-border bg-card flex flex-col transition-transform duration-200 ease-out",
