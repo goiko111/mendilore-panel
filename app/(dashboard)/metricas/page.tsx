@@ -375,7 +375,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
             </p>
           </div>
           <a
-            href="https://lookerstudio.google.com/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
+            href="https://lookerstudio.google.com/u/4/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
             target="_blank"
             rel="noopener noreferrer"
             className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap"
@@ -387,7 +387,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         <div className="rounded-lg overflow-hidden border border-border bg-muted/20" style={{ height: "680px" }}>
           <iframe
             title="Visitas web mendilore.com (Looker Studio)"
-            src="https://lookerstudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/p_70jbm2sotd"
+            src="https://lookerstudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/p_70jbm2sotd?authuser=goiko@gugocreative.com"
             width="100%"
             height="100%"
             frameBorder="0"
@@ -398,7 +398,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         </div>
 
         <p className="text-[11px] text-muted-foreground mt-2 italic">
-          Si ves "Acceso denegado", asegúrate de estar logueado en Google con info@mendilore.com o goiko@gugocreative.com en este navegador.
+          Si ves "Acceso denegado": el iframe usa tu sesión Google activa. Inicia sesión con info@mendilore.com o goiko@gugocreative.com en otra pestaña y refresca.
         </p>
       </div>
 
