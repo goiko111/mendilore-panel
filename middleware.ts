@@ -13,9 +13,8 @@ export const config = {
      * - _next/image (image optimization)
      * - favicon.ico
      * - api/webhook (these have own auth via secret header)
-     * - api/debug (public debug endpoints — TEMPORAL, remove en cierre)
      * - images, .svg, .png, .jpg, .jpeg, .gif, .webp
      */
-    "/((?!_next/static|_next/image|favicon.ico|api/webhook|api/debug|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+    "/((?!_next/static|_next/image|favicon.ico|api/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
   ]
 };
