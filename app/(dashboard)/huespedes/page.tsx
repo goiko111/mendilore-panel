@@ -53,12 +53,21 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
 
   // 3) Aplicar búsqueda libre
   const q = sp.q?.toLowerCase().trim();
+  // Orden default: por última estancia desc (huéspedes recientes primero)
   let huespedes = q
     ? (huespedesRaw ?? []).filter((h: any) => {
         const txt = `${h.nombre ?? ""} ${h.apellidos ?? ""} ${h.email ?? ""} ${h.telefono ?? ""}`.toLowerCase();
         return txt.includes(q);
       })
     : (huespedesRaw ?? []);
+
+
+  // Sort por última estancia DESC (huéspedes más recientes primero)
+  huespedes = huespedes.sort((a: any, b: any) => {
+    const ua = statsMap.get(a.id)?.ultima ?? "";
+    const ub = statsMap.get(b.id)?.ultima ?? "";
+    return ub.localeCompare(ua);
+  });
 
   // 4) Repetidores
   if (onlyRepeat) {
