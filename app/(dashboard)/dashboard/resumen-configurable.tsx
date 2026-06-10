@@ -163,7 +163,7 @@ export function ResumenConfigurable({ data }: { data: Record<string, any> }) {
           <p className="text-sm text-muted-foreground mb-3">No tienes KPIs visibles. Pulsa "Personalizar KPIs" para añadir alguno.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {kpisVisibles.map((kpiKey) => (
             <div key={kpiKey}>{renderKPI(kpiKey)}</div>
           ))}
@@ -178,12 +178,12 @@ function KPICard({ label, value, hint, emoji, accent = "default" }: { label: str
     : accent === "green" ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-950/10"
     : "border-border bg-card";
   return (
-    <div className={`rounded-xl border p-4 ${accentBg}`}>
+    <div className={`rounded-xl border p-3 sm:p-4 ${accentBg}`}>
       <div className="flex items-start justify-between mb-2">
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">{label}</div>
         {emoji && <div className="text-base leading-none">{emoji}</div>}
       </div>
-      <div className="text-2xl font-semibold text-foreground tabular-nums">{value}</div>
+      <div className="text-xl sm:text-2xl font-semibold text-foreground tabular-nums">{value}</div>
       {hint && <div className="text-xs text-muted-foreground mt-1 truncate">{hint}</div>}
     </div>
   );
