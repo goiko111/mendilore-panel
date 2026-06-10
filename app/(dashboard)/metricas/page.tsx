@@ -387,7 +387,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         <div className="rounded-lg overflow-hidden border border-border bg-muted/20" style={{ height: "680px" }}>
           <iframe
             title="Visitas web mendilore.com (Looker Studio)"
-            src="https://lookerstudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/p_70jbm2sotd?authuser=goiko@gugocreative.com"
+            src="https://lookerstudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/y2b0F"
             width="100%"
             height="100%"
             frameBorder="0"
