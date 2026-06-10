@@ -70,6 +70,8 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
   const totalNoches = reservas.reduce((acc: number, r: any) => acc + Number(r.noches || 0), 0);
   const totalFuturas = reservas.filter((r: any) => r.fecha_in >= today).length;
   const totalPasadas = reservas.filter((r: any) => r.fecha_in < today).length;
+  const totalCobrado = reservas.filter((r: any) => r.estado_cobro === "cobrado").reduce((acc: number, r: any) => acc + Number(r.importe_total || 0), 0);
+  const totalPendiente = reservas.filter((r: any) => r.estado_cobro === "pendiente").reduce((acc: number, r: any) => acc + Number(r.importe_total || 0), 0);
 
   // URL de exportación con los mismos filtros aplicados
   const exportParams = new URLSearchParams();
