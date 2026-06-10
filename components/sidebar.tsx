@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target, Database } from "lucide-react";
+import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target, Database, Shield } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,7 @@ const items = [
   { href: "/notificaciones", label: "Notificaciones", icon: Bell, badge: true },
   { href: "/objetivos", label: "Objetivos", icon: Target },
   { href: "/datos-disponibles", label: "Datos disponibles", icon: Database },
+  { href: "/partes-policia", label: "Partes policía", icon: Shield },
   { href: "/configuracion", label: "Configuración", icon: Settings }
 ];
 
