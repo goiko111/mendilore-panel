@@ -3,17 +3,20 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell } from "lucide-react";
+import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/dashboard", label: "Resumen", icon: LayoutDashboard },
+  { href: "/calendario", label: "Calendario", icon: CalendarDays },
+  { href: "/tareas", label: "Tareas", icon: ClipboardList },
   { href: "/reservas", label: "Reservas", icon: CalendarRange },
   { href: "/huespedes", label: "Huéspedes", icon: Users },
   { href: "/metricas", label: "Métricas", icon: LineChart },
   { href: "/competencia", label: "Competencia", icon: TrendingUp },
   { href: "/notificaciones", label: "Notificaciones", icon: Bell, badge: true },
+  { href: "/objetivos", label: "Objetivos", icon: Target },
   { href: "/configuracion", label: "Configuración", icon: Settings }
 ];
 
