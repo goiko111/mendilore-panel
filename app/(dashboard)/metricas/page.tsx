@@ -365,42 +365,56 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         </div>
       </div>
 
-      {/* Visitas web — Embed Looker Studio */}
-      <div className="bg-card border border-border rounded-xl p-5 mb-6">
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
-            <p className="text-xs text-muted-foreground">
-              Informe Looker Studio · sesiones, usuarios, fuentes y dispositivos · últimos 28 días
-            </p>
+      {/* Visitas web — Card con CTA grande (en lugar de iframe que requiere multi-auth) */}
+      <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/30 dark:to-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6 mb-6">
+        <div className="flex items-start gap-4">
+          <div className="size-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-6">
+              <polyline points="3 17 9 11 13 15 21 7" />
+              <polyline points="14 7 21 7 21 14" />
+            </svg>
           </div>
-          <a
-            href="https://lookerstudio.google.com/u/4/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 text-xs font-medium text-primary hover:underline whitespace-nowrap"
-          >
-            Abrir en Looker ↗
-          </a>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Dashboard Looker Studio con sesiones, usuarios, fuentes, dispositivos y conversiones · últimos 28 días<br/>
+              <span className="text-xs italic">Se abre en pestaña aparte usando tu cuenta Google con acceso a GA4.</span>
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <a
+                href="https://lookerstudio.google.com/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-4 py-2.5 rounded-lg transition shadow-sm"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+                Abrir dashboard de visitas web
+              </a>
+              <a
+                href="https://analytics.google.com/analytics/web/#/p540181854/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-emerald-700 dark:text-emerald-400 hover:underline font-medium px-3 py-2 rounded-lg text-sm"
+              >
+                Ver Google Analytics ↗
+              </a>
+            </div>
+          </div>
         </div>
-
-        <div className="rounded-lg overflow-hidden border border-border bg-muted/20" style={{ height: "680px" }}>
-          <iframe
-            title="Visitas web mendilore.com (Looker Studio)"
-            src="https://lookerstudio.google.com/embed/reporting/11962e47-595d-43bc-bee9-86a67fad77b3/page/y2b0F"
-            width="100%"
-            height="100%"
-            frameBorder="0"
-            style={{ border: 0 }}
-            allowFullScreen
-            sandbox="allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-          />
+        <div className="mt-4 pt-4 border-t border-emerald-200/60 dark:border-emerald-800/40">
+          <p className="text-xs text-muted-foreground">
+            <strong className="text-foreground">¿Por qué no se muestra aquí?</strong> El navegador necesita estar logueado con la cuenta Google
+            <code className="bg-emerald-100 dark:bg-emerald-950/50 px-1 py-0.5 rounded mx-1">info@mendilore.com</code> o
+            <code className="bg-emerald-100 dark:bg-emerald-950/50 px-1 py-0.5 rounded mx-1">goiko@gugocreative.com</code>
+            para que el embed cargue. Pulsando el botón se abre en pestaña aparte y Google detecta la cuenta correcta automáticamente.
+          </p>
         </div>
-
-        <p className="text-[11px] text-muted-foreground mt-2 italic">
-          Si ves "Acceso denegado": el iframe usa tu sesión Google activa. Inicia sesión con info@mendilore.com o goiko@gugocreative.com en otra pestaña y refresca.
-        </p>
       </div>
+
 
       {!porSemana || porSemana.length === 0 ? (
         <EmptyState
