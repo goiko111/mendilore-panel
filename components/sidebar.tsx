@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target, Database, Shield } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { GlobalSearch } from "./global-search";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -48,6 +49,10 @@ export function Sidebar({ userEmail, unreadCount = 0 }: { userEmail?: string | n
           <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Panel</div>
           <div className="text-sm font-semibold text-foreground leading-tight">Casa Mendilore</div>
         </div>
+      </div>
+
+      <div className="px-3 pt-3">
+        <GlobalSearch />
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
