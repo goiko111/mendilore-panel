@@ -6,6 +6,7 @@ import { CalendarRange, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { AccionesReserva } from "./acciones-reserva";
 
 export const metadata = { title: "Reservas" };
 
@@ -195,6 +196,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                 <th className="text-left font-medium px-5 py-2.5">Reserva</th>
                 <th className="text-left font-medium px-5 py-2.5">Cobro</th>
                 <th className="text-left font-medium px-5 py-2.5">Canal</th>
+                <th className="text-left font-medium px-5 py-2.5">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -213,6 +215,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                     <td className="px-5 py-3 text-muted-foreground">{r.estado_reserva}</td>
                     <td className="px-5 py-3 text-muted-foreground">{r.estado_cobro}</td>
                     <td className="px-5 py-3 text-muted-foreground">{r.canal ?? "—"}</td>
+                    <td className="px-5 py-3"><AccionesReserva id={r.id} estado_cobro={r.estado_cobro} huesped_email={(r.huespedes as any)?.email} /></td>
                   </tr>
                 );
               })}
