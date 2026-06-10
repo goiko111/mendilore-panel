@@ -206,7 +206,7 @@ export default async function CompetenciaPage() {
         description={`${(competidores ?? []).length} hoteles · ${ventanas.length} ${ventanas.length === 1 ? "ventana" : "ventanas"} temporales · precios por noche (€/n) para estancias de 3 noches · 2 adultos`}
         actions={
           <span className="text-xs text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
-            Refresca cada lunes 07:00
+            Snapshots scheduled — ver doc
           </span>
         }
       />
