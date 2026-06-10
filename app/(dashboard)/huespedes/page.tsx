@@ -203,8 +203,8 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
                     <td className="px-5 py-3 text-right font-medium">{formatCurrency(s?.gasto ?? 0)}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{s?.ultima ? formatDate(s.ultima) : "—"}</td>
                     <td className="px-5 py-3 text-right">
-                      <Link href={`/huespedes/${h.id}`} className="text-muted-foreground hover:text-foreground">
-                        <ChevronRight className="size-4 inline" />
+                      <Link href={`/huespedes/${h.id}`} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition">
+                        Editar <ChevronRight className="size-3" />
                       </Link>
                     </td>
                   </tr>
