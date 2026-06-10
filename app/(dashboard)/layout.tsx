@@ -1,5 +1,6 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/sidebar";
+import { OnboardingTour } from "@/components/onboarding-tour";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -24,6 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Sidebar userEmail={user?.email} unreadCount={unreadCount} />
       <main className="flex-1 min-w-0">
         <div className="container px-4 sm:px-6 py-5 lg:py-8 max-w-7xl">{children}</div>
+        <OnboardingTour />
       </main>
     </div>
   );
