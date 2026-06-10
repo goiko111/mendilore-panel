@@ -123,6 +123,46 @@ export default async function CompetenciaPage() {
     }
   });
 
+
+  // ===========================
+  // Alertas de movimiento: detectar cambios >15% en precios entre snapshots
+  // Comparamos el snapshot más reciente vs el penúltimo (mismo competidor + check_in)
+  // ===========================
+  type Alerta = { competidor: string; check_in: string; precio_actual: number; precio_anterior: number; delta_pct: number; tipo: "subida" | "bajada" };
+  const alertasMovimiento: Alerta[] = [];
+  const snapshotsPorClave = new Map<string, Snapshot[]>();
+  (snapshots ?? []).forEach((s: any) => {
+    if (!s.disponible || !s.precio_por_noche) return;
+    const k = `${s.competidor_id}|${s.check_in}`;
+    const arr = snapshotsPorClave.get(k) ?? [];
+    arr.push(s as Snapshot);
+    snapshotsPorClave.set(k, arr);
+  });
+  snapshotsPorClave.forEach((arr, k) => {
+    if (arr.length < 2) return;
+    arr.sort((a, b) => (a.fecha_snapshot < b.fecha_snapshot ? 1 : -1));
+    const actual = arr[0];
+    const anterior = arr[1];
+    if (!actual.precio_por_noche || !anterior.precio_por_noche) return;
+    const pa = Number(actual.precio_por_noche);
+    const pn = Number(anterior.precio_por_noche);
+    if (pn === 0) return;
+    const delta = ((pa - pn) / pn) * 100;
+    if (Math.abs(delta) < 15) return;
+    const [comp_id, check_in] = k.split("|");
+    const compName = (competidores ?? []).find((c: any) => c.id === comp_id)?.nombre ?? "—";
+    alertasMovimiento.push({
+      competidor: compName,
+      check_in,
+      precio_actual: pa,
+      precio_anterior: pn,
+      delta_pct: delta,
+      tipo: delta > 0 ? "subida" : "bajada"
+    });
+  });
+  alertasMovimiento.sort((a, b) => Math.abs(b.delta_pct) - Math.abs(a.delta_pct));
+  const alertasTop = alertasMovimiento.slice(0, 8);
+
   return (
     <div>
       <PageHeader
@@ -134,6 +174,38 @@ export default async function CompetenciaPage() {
           </span>
         }
       />
+
+      {/* Alertas de movimiento de precios */}
+      {alertasTop.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-5 mb-5">
+          <h2 className="text-base font-semibold text-foreground mb-1">📊 Alertas de movimiento</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Cambios ≥15% en precios entre los últimos 2 snapshots ({alertasMovimiento.length} totales, mostrando top {alertasTop.length})
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {alertasTop.map((a, i) => {
+              const sign = a.delta_pct > 0 ? "+" : "";
+              const bg = a.tipo === "bajada" ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800" : "bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-800";
+              const colorTexto = a.tipo === "bajada" ? "text-emerald-700 dark:text-emerald-400" : "text-orange-700 dark:text-orange-400";
+              return (
+                <div key={i} className={`rounded-lg border p-3 ${bg}`}>
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="font-medium text-foreground text-sm truncate">{a.competidor}</div>
+                    <div className={`text-sm font-semibold tabular-nums ${colorTexto}`}>{sign}{a.delta_pct.toFixed(1)}%</div>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Entrada {ventanaLabel(a.check_in).secondary} · {formatCurrency(a.precio_anterior, "EUR")} → <strong className="text-foreground">{formatCurrency(a.precio_actual, "EUR")}</strong>/n
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-3 italic">
+            Bajadas grandes → competidor presiona por reservar; subidas → competidor sube tras llenarse o estrategia agresiva.
+          </p>
+        </div>
+      )}
+
 
       {!competidores || competidores.length === 0 ? (
         <EmptyState
