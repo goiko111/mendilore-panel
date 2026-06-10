@@ -1,3 +1,4 @@
+import { EditarHuesped } from "../editar-huesped";
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,7 @@ export default async function HuespedDetallePage({ params }: { params: Promise<{
 
   const { data: huesped } = await supabase
     .from("huespedes")
-    .select("id, nombre, apellidos, email, telefono, pais, fuente, fecha_alta, notas")
+    .select("id, nombre, apellidos, email, telefono, pais, fuente, fecha_alta, notas, dni, pasaporte, fecha_nacimiento, nacionalidad, notas_privadas")
     .eq("id", id)
     .maybeSingle();
 
@@ -45,6 +46,8 @@ export default async function HuespedDetallePage({ params }: { params: Promise<{
         title={`${huesped.nombre} ${huesped.apellidos ?? ""}`.trim()}
         description={`Alta ${formatDate(huesped.fecha_alta)} · ${huesped.fuente ?? "—"}`}
       />
+
+      <EditarHuesped huesped={huesped} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Reservas totales" value={String(reservas?.length ?? 0)} hint={`${cobradas} ya cobradas`} />
