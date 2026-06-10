@@ -244,15 +244,42 @@ export default async function CompetenciaPage() {
 
 
 
-      {/* Tendencias por competidor — sparklines últimos snapshots */}
+      {/* Tendencias por competidor — adaptativo según nº snapshots */}
       {tendenciasPorCompetidor.length > 0 && (
         <div className="bg-card border border-border rounded-xl p-5 mb-5">
-          <h2 className="text-base font-semibold text-foreground mb-1">📈 Tendencias por competidor</h2>
+          <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+            <h2 className="text-base font-semibold text-foreground">📈 Tendencias por competidor</h2>
+            <span className="text-[11px] text-muted-foreground bg-muted/40 px-2 py-0.5 rounded">
+              {tendenciasPorCompetidor.reduce((s, t) => s + t.serie.length, 0)} snapshots totales
+            </span>
+          </div>
           <p className="text-xs text-muted-foreground mb-4">
-            Evolución del precio medio por noche en los snapshots recientes · sparkline + cambio 30d
+            Evolución del precio medio por noche · sparkline cuando hay 3+ snapshots · delta 30d cuando hay histórico
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {tendenciasPorCompetidor.map((t) => {
+              const nSnaps = t.serie.length;
+              const hayTendencia = nSnaps >= 3;
+              const hayDelta = t.delta_pct !== null && Math.abs(t.delta_pct) > 0.1;
+
+              if (!hayTendencia) {
+                // Vista compacta cuando hay pocos snapshots
+                return (
+                  <div key={t.competidor_id} className="rounded-lg border border-border p-3 bg-muted/10">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="font-medium text-foreground text-sm truncate flex-1">{t.nombre}</div>
+                      {t.precio_actual !== null && (
+                        <div className="font-semibold text-foreground text-sm">{formatCurrency(t.precio_actual, "EUR")}/n</div>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded text-center border border-amber-200/60 dark:border-amber-800/40">
+                      📡 {nSnaps} snapshot{nSnaps !== 1 ? "s" : ""} · esperando más datos para tendencia
+                    </div>
+                  </div>
+                );
+              }
+
+              // Sparkline con datos reales
               const min = Math.min(...t.serie.map(s => s.precio));
               const max = Math.max(...t.serie.map(s => s.precio));
               const rango = max - min || 1;
@@ -273,22 +300,15 @@ export default async function CompetenciaPage() {
                       {t.precio_actual !== null && (
                         <div className="font-semibold text-foreground">{formatCurrency(t.precio_actual, "EUR")}/n</div>
                       )}
-                      {t.delta_pct !== null && (
-                        <div className={t.delta_pct > 5 ? "text-orange-700 dark:text-orange-400 font-medium" : t.delta_pct < -5 ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-muted-foreground"}>
-                          {sign}{t.delta_pct.toFixed(1)}% vs 30d
+                      {hayDelta && (
+                        <div className={t.delta_pct! > 5 ? "text-orange-700 dark:text-orange-400 font-medium" : t.delta_pct! < -5 ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-muted-foreground"}>
+                          {sign}{t.delta_pct!.toFixed(1)}% vs 30d
                         </div>
                       )}
                     </div>
                   </div>
                   <svg width="100%" height="40" viewBox="0 0 200 40" preserveAspectRatio="none" className="overflow-visible">
-                    <polyline
-                      points={puntos}
-                      fill="none"
-                      stroke={colorLinea}
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
+                    <polyline points={puntos} fill="none" stroke={colorLinea} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     {t.serie.slice(-1).map((p, i) => {
                       const x = W;
                       const y = H - ((p.precio - min) / rango) * H;
@@ -297,7 +317,7 @@ export default async function CompetenciaPage() {
                   </svg>
                   <div className="text-[10px] text-muted-foreground mt-1 flex items-center justify-between">
                     <span>min {formatCurrency(min, "EUR")}</span>
-                    <span>{t.serie.length} snapshots</span>
+                    <span>{nSnaps} snapshots</span>
                     <span>max {formatCurrency(max, "EUR")}</span>
                   </div>
                 </div>
