@@ -11,6 +11,36 @@ export const metadata = { title: "Huéspedes" };
 
 const FUENTES = ["directo", "booking", "airbnb", "expedia", "web_propia", "walk_in", "otro"];
 
+
+  // Auto-inferir nacionalidad por email cuando no está en BD
+  function inferNacionalidad(h: any): string | null {
+    if (h.pais) return h.pais;
+    if (h.nacionalidad) return h.nacionalidad;
+    const email = (h.email ?? "").toLowerCase();
+    if (!email) return null;
+    // Booking proxy emails siempre @guest.booking.com — buscar pistas en notas/nombre
+    // Por TLD genérico de email
+    const tldMap: Record<string, string> = {
+      ".es": "España", ".fr": "Francia", ".pt": "Portugal", ".it": "Italia",
+      ".de": "Alemania", ".at": "Austria", ".ch": "Suiza", ".nl": "Países Bajos",
+      ".be": "Bélgica", ".uk": "Reino Unido", ".co.uk": "Reino Unido",
+      ".ie": "Irlanda", ".dk": "Dinamarca", ".se": "Suecia", ".no": "Noruega",
+      ".fi": "Finlandia", ".pl": "Polonia", ".cz": "República Checa",
+      ".ru": "Rusia", ".us": "EEUU", ".ca": "Canadá", ".mx": "México",
+      ".ar": "Argentina", ".br": "Brasil", ".cl": "Chile", ".au": "Australia",
+      ".jp": "Japón", ".cn": "China", ".kr": "Corea del Sur"
+    };
+    for (const [tld, pais] of Object.entries(tldMap)) {
+      if (email.endsWith(tld)) return pais;
+    }
+    // Heurística por nombre típico holandés/alemán para emails proxy Booking
+    const nombre = (h.nombre ?? "").toLowerCase();
+    if (/\b(marjan|ivan|jaap|kees|wouter|ginkel)\b/i.test(nombre)) return "Países Bajos";
+    if (/\b(klaus|wolfgang|fritz|hans|jurgen)\b/i.test(nombre)) return "Alemania";
+    if (/\b(francois|jean|pierre|jacques)\b/i.test(nombre)) return "Francia";
+    return null;
+  }
+
 export default async function HuespedesPage({ searchParams }: { searchParams: Promise<{ q?: string; pais?: string; fuente?: string; r?: string }> }) {
   const sp = await searchParams;
   const onlyRepeat = sp.r === "1";
@@ -75,7 +105,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   }
 
   // 5) Países únicos
-  const paisesUnicos = Array.from(new Set((huespedesRaw ?? []).map((h: any) => h.pais).filter(Boolean))).sort();
+  const paisesUnicos = Array.from(new Set((huespedesRaw ?? []).map((h: any) => inferNacionalidad(h)).filter(Boolean))).sort();
 
   // 6) KPIs globales
   const totalRepetidores = (huespedesRaw ?? []).filter((h: any) => (statsMap.get(h.id)?.reservas ?? 0) > 1).length;
@@ -167,7 +197,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
                       <div>{h.email ?? "—"}</div>
                       {h.telefono && <div className="text-[11px]">{h.telefono}</div>}
                     </td>
-                    <td className="px-5 py-3 text-muted-foreground">{h.pais ?? "—"}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{inferNacionalidad(h) ?? "—"}</td>
                     <td className="px-5 py-3 text-right font-medium text-foreground">{s?.reservas ?? 0}</td>
                     <td className="px-5 py-3 text-right text-muted-foreground">{s?.noches ?? 0}</td>
                     <td className="px-5 py-3 text-right font-medium">{formatCurrency(s?.gasto ?? 0)}</td>
