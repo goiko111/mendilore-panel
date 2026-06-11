@@ -258,12 +258,12 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         <StatCard
           label="Lead time medio"
           value={leadTimes.length > 0 ? `${leadTimeMedio.toFixed(1)} d` : "—"}
-          hint={leadTimes.length > 0 ? `${leadTimes.length} reservas 90d` : "Sin datos"}
+          hint={leadTimes.length > 0 ? `${leadTimes.length} reservas 90d` : "Esperando más reservas"}
         />
         <StatCard
           label="ALOS — estancia media"
           value={alosMedio > 0 ? `${alosMedio.toFixed(1)} noches` : "—"}
-          hint={alosMedio > 0 ? `${nochesArr.length} reservas` : "Sin datos"}
+          hint={alosMedio > 0 ? `${nochesArr.length} reservas` : "Esperando más reservas"}
         />
         <StatCard
           label="Cancel rate (mes)"
