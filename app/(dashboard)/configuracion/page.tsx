@@ -59,16 +59,16 @@ export default async function ConfiguracionPage() {
               <dd className="text-foreground">{user?.email ?? "—"}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground text-xs">Nombre</dt>
-              <dd className="text-foreground">{perfil?.nombre ?? "—"}</dd>
+              <dt className="text-muted-foreground text-xs">Cuenta</dt>
+              <dd className="text-foreground">Casa Mendilore</dd>
             </div>
             <div>
               <dt className="text-muted-foreground text-xs">Rol</dt>
-              <dd className="text-foreground">{perfil?.rol ?? "—"}</dd>
+              <dd className="text-foreground">{perfil?.rol ?? "Administrador"}</dd>
             </div>
             <div>
-              <dt className="text-muted-foreground text-xs">Organización</dt>
-              <dd className="text-foreground">{perfil?.organizacion ?? "—"}</dd>
+              <dt className="text-muted-foreground text-xs">Conectado desde</dt>
+              <dd className="text-foreground">{user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleDateString("es-ES", {day:"numeric", month:"long", year:"numeric"}) : "—"}</dd>
             </div>
           </dl>
         </section>
