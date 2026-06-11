@@ -5,7 +5,7 @@ import { Settings2, Eye, EyeOff } from "lucide-react";
 
 type KPIKey =
   | "checkins_hoy" | "checkouts_hoy" | "huespedes_presentes" | "llegadas_manana"
-  | "cobros_7d" | "habitaciones_libres" | "proxima_llegada" | "tareas_pendientes"
+  | "cobros_14d" | "habitaciones_libres" | "proxima_llegada" | "tareas_pendientes"
   | "ingresos_mes" | "ingresos_vs_target" | "pipeline_30d" | "pace_7d" | "cobros_pendientes_total"
   | "reservas_nuevas_hoy" | "cobrado_mes" | "tasa_cobro";
 
@@ -18,7 +18,7 @@ const KPI_DEFS: Record<KPIKey, { label: string; emoji: string; group: string }> 
   proxima_llegada: { label: "Próxima llegada", emoji: "⏭️", group: "Operacional" },
   tareas_pendientes: { label: "Tareas pendientes", emoji: "📋", group: "Operacional" },
   reservas_nuevas_hoy: { label: "Reservas nuevas hoy", emoji: "✨", group: "Operacional" },
-  cobros_7d: { label: "Cobros vencen <7d", emoji: "💰", group: "Cobros" },
+  cobros_14d: { label: "Cobros vencen <14d", emoji: "💰", group: "Cobros" },
   cobros_pendientes_total: { label: "Pendiente de cobro total", emoji: "💵", group: "Cobros" },
   cobrado_mes: { label: "Cobrado este mes", emoji: "✅", group: "Cobros" },
   tasa_cobro: { label: "Tasa de cobro %", emoji: "📊", group: "Cobros" },
@@ -28,7 +28,7 @@ const KPI_DEFS: Record<KPIKey, { label: string; emoji: string; group: string }> 
   pace_7d: { label: "Pace booking 7d", emoji: "⚡", group: "Financiero" }
 };
 
-const DEFAULT_VISIBLES: KPIKey[] = ["checkins_hoy", "checkouts_hoy", "cobros_7d", "pipeline_30d", "cobrado_mes", "habitaciones_libres", "ingresos_mes", "pipeline_30d"];
+const DEFAULT_VISIBLES: KPIKey[] = ["checkins_hoy", "checkouts_hoy", "cobros_14d", "pipeline_30d", "cobrado_mes", "habitaciones_libres", "ingresos_mes", "pipeline_30d"];
 
 function fmtEur(n: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
@@ -70,7 +70,7 @@ export function ResumenConfigurable({ data }: { data: Record<string, any> }) {
       case "llegadas_manana":
         return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
           hint={d.detail?.length > 0 ? d.detail.slice(0, 2).join(" · ") : "Sin llegadas mañana"} />;
-      case "cobros_7d":
+      case "cobros_14d":
         return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
           hint={d.importe ? fmtEur(d.importe) : "Sin pendientes"} accent={d.value > 0 ? "amber" : "default"} />;
       case "habitaciones_libres":
