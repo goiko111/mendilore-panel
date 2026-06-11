@@ -28,7 +28,10 @@ export default async function ObjetivosPage() {
     proximos.push({
       year: y,
       month: m,
-      label: d.toLocaleDateString("es-ES", { month: "long", year: "numeric" }),
+      label: (() => {
+        const s = d.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+        return s.charAt(0).toUpperCase() + s.slice(1);
+      })(),
       existente
     });
   }
@@ -49,7 +52,7 @@ export default async function ObjetivosPage() {
           <div key={`${p.year}-${p.month}`} className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-center gap-2 mb-3">
               <Target className="size-4 text-primary" />
-              <div className="font-medium text-foreground capitalize">{p.label}</div>
+              <div className="font-medium text-foreground">{p.label}</div>
             </div>
             <GuardarObjetivo
               year={p.year}
