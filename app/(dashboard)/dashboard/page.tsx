@@ -54,13 +54,13 @@ export default async function DashboardPage() {
     .lt("fecha_in", dayAfterTomorrow)
     .neq("estado_cobro", "cancelado");
 
-  // E) Cobros pendientes <7d
+  // E) Cobros pendientes <14d (unificado con tabla)
   const { data: cobros7d, count: cntCobros7d } = await supabase
     .from("reservas")
     .select("id, habitacion, fecha_in, importe_total, importe_moneda, huespedes(nombre, apellidos)", { count: "exact" })
     .eq("estado_cobro", "pendiente")
     .gte("fecha_in", todayStr)
-    .lte("fecha_in", in7Days)
+    .lte("fecha_in", in14Days)
     .order("fecha_in", { ascending: true });
   const cobros7dImporte = (cobros7d ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
 
@@ -177,7 +177,7 @@ export default async function DashboardPage() {
     checkouts_hoy: { value: cntCheckoutsHoy ?? 0, detail: (checkoutsHoy ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
     huespedes_presentes: { value: cntPresentes ?? 0 },
     llegadas_manana: { value: cntLlegadasManana ?? 0, detail: (llegadasManana ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
-    cobros_7d: { value: cntCobros7d ?? 0, importe: cobros7dImporte },
+    cobros_14d: { value: cntCobros7d ?? 0, importe: cobros7dImporte },
     habitaciones_libres: { value: libresHoy, total: 6 },
     proxima_llegada: { value: proxLlegada ? `${formatDate(proxLlegada.fecha_in)}` : '—', detail: proxLlegada ? `${(proxLlegada.huespedes as any)?.nombre ?? '—'} · ${proxLlegada.habitacion}` : '' },
     tareas_pendientes: { value: cntTareasHoy },
