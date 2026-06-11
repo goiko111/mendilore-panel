@@ -372,16 +372,6 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         <VisitasWebGA4 />
       </Suspense>
 
-        <div className="mt-4 pt-4 border-t border-emerald-200/60 dark:border-emerald-800/40">
-          <p className="text-xs text-muted-foreground">
-            <strong className="text-foreground">¿Por qué no se muestra aquí?</strong> El navegador necesita estar logueado con la cuenta Google
-            <code className="bg-emerald-100 dark:bg-emerald-950/50 px-1 py-0.5 rounded mx-1">info@mendilore.com</code> o
-            <code className="bg-emerald-100 dark:bg-emerald-950/50 px-1 py-0.5 rounded mx-1">goiko@gugocreative.com</code>
-            para que el embed cargue. Pulsando el botón se abre en pestaña aparte y Google detecta la cuenta correcta automáticamente.
-          </p>
-        </div>
-      </div>
-
 
       {!porSemana || porSemana.length === 0 ? (
         <EmptyState
