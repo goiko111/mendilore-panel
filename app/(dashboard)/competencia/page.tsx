@@ -52,20 +52,32 @@ function ventanaLabel(check_in: string): { primary: string; secondary: string } 
 }
 
 export default async function CompetenciaPage() {
-  const supabase = createAdminClient();
+  let competidores: any[] | null = [];
+  let snapshots: any[] | null = [];
+  let pageError: string | null = null;
+  try {
+    const supabase = createAdminClient();
+    const { data: c, error: ec } = await supabase
+      .from("competidores")
+      .select("id, nombre, booking_url, estrellas")
+      .eq("activo", true)
+      .order("nombre");
+    if (ec) throw new Error(`competidores: ${ec.message}`);
+    competidores = c;
 
-  const { data: competidores } = await supabase
-    .from("competidores")
-    .select("id, nombre, booking_url, estrellas")
-    .eq("activo", true)
-    .order("nombre");
-
-  const desde60d = new Date(Date.now() - 60 * 86400_000).toISOString().slice(0, 10);
-  const { data: snapshots } = await supabase
-    .from("precios_competidores_dia")
-    .select("competidor_id, fecha_snapshot, check_in, check_out, precio_total, precio_por_noche, moneda, disponible, rating, rating_label, reviews_count")
-    .gte("fecha_snapshot", desde60d)
-    .order("check_in", { ascending: true });
+    const desde60d = new Date(Date.now() - 60 * 86400_000).toISOString().slice(0, 10);
+    const { data: s, error: es } = await supabase
+      .from("precios_competidores_dia")
+      .select("competidor_id, fecha_snapshot, check_in, check_out, precio_total, precio_por_noche, moneda, disponible, rating, rating_label, reviews_count")
+      .gte("fecha_snapshot", desde60d)
+      .order("check_in", { ascending: true });
+    if (es) throw new Error(`precios_competidores_dia: ${es.message}`);
+    snapshots = s;
+  } catch (err: any) {
+    pageError = String(err?.message ?? err);
+    competidores = [];
+    snapshots = [];
+  }
 
   // Por cada (competidor_id, check_in) → snapshot más reciente
   const ultimosPorVentana = new Map<string, Snapshot>();
@@ -210,6 +222,14 @@ export default async function CompetenciaPage() {
           </span>
         }
       />
+
+      {pageError && (
+        <div className="bg-card border border-orange-300 dark:border-orange-800 rounded-xl p-5 mb-5">
+          <h2 className="text-base font-semibold text-foreground mb-1">⚠️ Error temporal al cargar datos de competencia</h2>
+          <p className="text-xs text-muted-foreground mb-2">El bloque de competencia no pudo cargar — esto puede deberse a una migración pendiente o un problema temporal de conexión. El resto del panel funciona con normalidad.</p>
+          <details className="text-[11px] text-muted-foreground"><summary className="cursor-pointer">Detalle técnico</summary><code className="block mt-2 p-2 bg-muted/40 rounded">{pageError}</code></details>
+        </div>
+      )}
 
       {/* Alertas de movimiento de precios */}
       {alertasTop.length > 0 && (
