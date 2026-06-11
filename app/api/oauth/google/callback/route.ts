@@ -53,23 +53,40 @@ export async function GET(req: NextRequest) {
   }
   const me = await meRes.json() as { email: string };
 
-  // 3) Guardar tokens en ga4_tokens
-  if (!tokens.refresh_token) {
-    return NextResponse.json({
-      error: "no_refresh_token",
-      hint: "Revoca acceso previo en https://myaccount.google.com/permissions y reintenta"
-    }, { status: 500 });
-  }
-
   const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
   const supabase = createAdminClient();
 
+  // 3) Si NO viene refresh_token, intentar usar el existente para este email
+  let refreshToken = tokens.refresh_token;
+  if (!refreshToken) {
+    const { data: existing } = await supabase
+      .from("ga4_tokens")
+      .select("refresh_token")
+      .eq("google_email", me.email)
+      .maybeSingle();
+    refreshToken = existing?.refresh_token;
+  }
+
+  if (!refreshToken) {
+    return NextResponse.redirect(
+      `https://panel.mendilore.com/metricas?ga4_error=no_refresh_token`
+    );
+  }
+
+  // 4) Validar que el scope incluya analytics.readonly
+  if (!tokens.scope.includes("analytics.readonly")) {
+    return NextResponse.redirect(
+      `https://panel.mendilore.com/metricas?ga4_error=missing_scope&scope=${encodeURIComponent(tokens.scope)}`
+    );
+  }
+
+  // 5) Guardar tokens en ga4_tokens (upsert por google_email)
   const { error } = await supabase
     .from("ga4_tokens")
     .upsert({
       google_email: me.email,
       access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      refresh_token: refreshToken,
       expires_at: expiresAt,
       scope: tokens.scope,
       property_id: GA4_PROPERTY_ID,
@@ -80,6 +97,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "db_save_failed", detail: error.message }, { status: 500 });
   }
 
-  // 4) Redirigir a /metricas con flag éxito
+  // 6) Redirigir a /metricas con flag éxito
   return NextResponse.redirect("https://panel.mendilore.com/metricas?ga4=connected");
 }
