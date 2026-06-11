@@ -2,7 +2,7 @@ export const runtime = 'edge';
 
 import { NextResponse } from "next/server";
 
-const CLIENT_ID = "128611104269-kuenpvc04k4s5aeg0lvp94tk6srv72kn.apps.googleusercontent.com";
+const CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || "";
 const REDIRECT_URI = "https://panel.mendilore.com/api/oauth/google/callback";
 const SCOPES = ["https://www.googleapis.com/auth/analytics.readonly", "https://www.googleapis.com/auth/userinfo.email"];
 
