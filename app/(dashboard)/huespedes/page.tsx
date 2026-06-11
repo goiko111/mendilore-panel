@@ -38,6 +38,22 @@ const FUENTES = ["directo", "booking", "airbnb", "expedia", "web_propia", "walk_
     if (/\b(marjan|ivan|jaap|kees|wouter|ginkel)\b/i.test(nombre)) return "Países Bajos";
     if (/\b(klaus|wolfgang|fritz|hans|jurgen)\b/i.test(nombre)) return "Alemania";
     if (/\b(francois|jean|pierre|jacques)\b/i.test(nombre)) return "Francia";
+    // Heurística por prefijo telefónico internacional
+    const tel = String(h.telefono ?? "").replace(/[^0-9+]/g, "");
+    const prefixMap: Record<string, string> = {
+      "+34": "España", "+33": "Francia", "+351": "Portugal", "+39": "Italia",
+      "+49": "Alemania", "+43": "Austria", "+41": "Suiza", "+31": "Países Bajos",
+      "+32": "Bélgica", "+44": "Reino Unido", "+353": "Irlanda", "+45": "Dinamarca",
+      "+46": "Suecia", "+47": "Noruega", "+358": "Finlandia", "+48": "Polonia",
+      "+420": "República Checa", "+7": "Rusia", "+1": "EEUU/Canadá", "+52": "México",
+      "+54": "Argentina", "+55": "Brasil", "+56": "Chile", "+61": "Australia",
+      "+81": "Japón", "+86": "China", "+82": "Corea del Sur"
+    };
+    // Probar prefijos más largos primero
+    const sortedPref = Object.keys(prefixMap).sort((a, b) => b.length - a.length);
+    for (const pref of sortedPref) {
+      if (tel.startsWith(pref)) return prefixMap[pref];
+    }
     return null;
   }
 
@@ -49,7 +65,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   // 1) Cargar huéspedes (sin limit estrecho)
   let query = supabase
     .from("huespedes")
-    .select("id, nombre, apellidos, email, telefono, pais, fecha_alta, fuente, notas", { count: "exact" })
+    .select("id, nombre, apellidos, email, telefono, pais, nacionalidad, fecha_alta, fuente, notas", { count: "exact" })
     .order("fecha_alta", { ascending: false })
     .limit(2000);
 
