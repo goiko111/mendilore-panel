@@ -92,12 +92,16 @@ export default async function HuespedDetallePage({ params }: { params: Promise<{
             </div>
           </div>
         </dl>
-        {huesped.notas && (
-          <div className="mt-4 pt-3 border-t border-border text-sm">
-            <div className="text-xs text-muted-foreground mb-1">Notas</div>
-            <div className="text-foreground">{huesped.notas}</div>
-          </div>
-        )}
+        {(() => {
+          const notas = (huesped.notas ?? "").replace(/\[MisterPlan\]/g, "").trim();
+          if (!notas) return null;
+          return (
+            <div className="mt-4 pt-3 border-t border-border text-sm">
+              <div className="text-xs text-muted-foreground mb-1">Notas</div>
+              <div className="text-foreground whitespace-pre-line">{notas}</div>
+            </div>
+          );
+        })()}
       </section>
 
       <section className="bg-card border border-border rounded-xl">
