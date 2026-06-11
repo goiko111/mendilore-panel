@@ -24,7 +24,7 @@ export default async function DashboardPage() {
   // A) Check-ins hoy
   const { data: checkinsHoy, count: cntCheckinsHoy } = await supabase
     .from("reservas")
-    .select("id, habitacion, huespedes(nombre, apellidos), num_huespedes:numero_huespedes", { count: "exact" })
+    .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
     .gte("fecha_in", todayStr)
     .lt("fecha_in", tomorrow)
     .neq("estado_cobro", "cancelado");
