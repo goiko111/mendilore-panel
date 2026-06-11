@@ -25,14 +25,16 @@ export default async function DashboardPage() {
   const { data: checkinsHoy, count: cntCheckinsHoy } = await supabase
     .from("reservas")
     .select("id, habitacion, huespedes(nombre, apellidos), num_huespedes:numero_huespedes", { count: "exact" })
-    .eq("fecha_in", todayStr)
+    .gte("fecha_in", todayStr)
+    .lt("fecha_in", tomorrow)
     .neq("estado_cobro", "cancelado");
 
   // B) Check-outs hoy
   const { data: checkoutsHoy, count: cntCheckoutsHoy } = await supabase
     .from("reservas")
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
-    .eq("fecha_out", todayStr)
+    .gte("fecha_out", todayStr)
+    .lt("fecha_out", tomorrow)
     .neq("estado_cobro", "cancelado");
 
   // C) Huéspedes presentes (entraron hoy o antes, salen hoy o después)
@@ -44,10 +46,12 @@ export default async function DashboardPage() {
     .neq("estado_cobro", "cancelado");
 
   // D) Llegadas mañana
+  const dayAfterTomorrow = new Date(today.getTime() + 2 * 86400_000).toISOString().slice(0, 10);
   const { data: llegadasManana, count: cntLlegadasManana } = await supabase
     .from("reservas")
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
-    .eq("fecha_in", tomorrow)
+    .gte("fecha_in", tomorrow)
+    .lt("fecha_in", dayAfterTomorrow)
     .neq("estado_cobro", "cancelado");
 
   // E) Cobros pendientes <7d
