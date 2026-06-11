@@ -1,19 +1,23 @@
 export const runtime = 'edge';
+import { NextRequest, NextResponse } from "next/server";
 
-import { NextResponse } from "next/server";
-
-const CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || "";
+// CLIENT_ID es público en OAuth — va en URL de autorización siempre
+const CLIENT_ID = "128611104269-kuenpvc04k4s5aeg0lvp94tk6srv72kn.apps.googleusercontent.com";
 const REDIRECT_URI = "https://panel.mendilore.com/api/oauth/google/callback";
-const SCOPES = ["https://www.googleapis.com/auth/analytics.readonly", "https://www.googleapis.com/auth/userinfo.email"];
+const SCOPES = [
+  "https://www.googleapis.com/auth/analytics.readonly",
+  "https://www.googleapis.com/auth/userinfo.email",
+];
 
-export async function GET() {
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
-    response_type: "code",
-    scope: SCOPES.join(" "),
-    access_type: "offline",
-    prompt: "consent"
-  });
-  return NextResponse.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+export async function GET(req: NextRequest) {
+  const url = new URL(
+    "https://accounts.google.com/o/oauth2/v2/auth"
+  );
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("redirect_uri", REDIRECT_URI);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", SCOPES.join(" "));
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent");
+  return NextResponse.redirect(url.toString());
 }
