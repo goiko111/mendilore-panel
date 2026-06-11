@@ -1,6 +1,9 @@
 export const runtime = 'edge';
 
 import Link from "next/link";
+import { Suspense } from "react";
+import { createAdminClient } from "@/lib/supabase/server";
+import { fetchGA4Snapshot } from "@/lib/ga4-oauth";
 import { LineChart as LineChartIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState, StatCard } from "@/components/page-header";
@@ -364,47 +367,11 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           <span>Más</span>
         </div>
       </div>
+      {/* Visitas web GA4 — server-side con OAuth user-delegated */}
+      <Suspense fallback={<div className="bg-card border border-border rounded-xl p-5 mb-6 text-sm text-muted-foreground">Cargando GA4...</div>}>
+        <VisitasWebGA4 />
+      </Suspense>
 
-      {/* Visitas web — Card con CTA grande (en lugar de iframe que requiere multi-auth) */}
-      <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/30 dark:to-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6 mb-6">
-        <div className="flex items-start gap-4">
-          <div className="size-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-6">
-              <polyline points="3 17 9 11 13 15 21 7" />
-              <polyline points="14 7 21 7 21 14" />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Dashboard Looker Studio con sesiones, usuarios, fuentes, dispositivos y conversiones · últimos 28 días<br/>
-              <span className="text-xs italic">Se abre en pestaña aparte usando tu cuenta Google con acceso a GA4.</span>
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <a
-                href="https://lookerstudio.google.com/reporting/11962e47-595d-43bc-bee9-86a67fad77b3"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-4 py-2.5 rounded-lg transition shadow-sm"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-4">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-                Abrir dashboard de visitas web
-              </a>
-              <a
-                href="https://analytics.google.com/analytics/web/#/p540181854/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-emerald-700 dark:text-emerald-400 hover:underline font-medium px-3 py-2 rounded-lg text-sm"
-              >
-                Ver Google Analytics ↗
-              </a>
-            </div>
-          </div>
-        </div>
         <div className="mt-4 pt-4 border-t border-emerald-200/60 dark:border-emerald-800/40">
           <p className="text-xs text-muted-foreground">
             <strong className="text-foreground">¿Por qué no se muestra aquí?</strong> El navegador necesita estar logueado con la cuenta Google
@@ -431,6 +398,98 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           <MetricasChart data={porSemana as any} />
         </div>
       )}
+    </div>
+  );
+}
+
+
+async function VisitasWebGA4() {
+  const supabase = createAdminClient();
+  let data = null;
+  let error = null;
+  try {
+    data = await fetchGA4Snapshot(supabase);
+  } catch (e: any) {
+    error = e?.message || "Error desconocido";
+  }
+
+  if (!data) {
+    return (
+      <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/30 dark:to-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6 mb-6">
+        <div className="flex items-start gap-4">
+          <div className="size-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">📊</div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Conecta tu cuenta Google con acceso a GA4 mendilore.com para ver sesiones, usuarios, top páginas y fuentes inline aquí.
+            </p>
+            <a href="/api/oauth/google/start" className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white font-medium px-4 py-2.5 rounded-lg transition shadow-sm">
+              🔗 Conectar Google Analytics
+            </a>
+            {error && <p className="text-xs text-red-700 dark:text-red-400 mt-3">⚠️ {error.slice(0, 200)}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 mb-6">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-base font-semibold text-foreground mb-1">Visitas web — mendilore.com</h2>
+          <p className="text-xs text-muted-foreground">Datos GA4 en directo · últimos 28 días</p>
+        </div>
+        <span className="text-[11px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-1 rounded-full font-medium">🟢 Conectado</span>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <div className="rounded-lg border border-border p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Sesiones</div>
+          <div className="text-2xl font-semibold text-foreground mt-1">{data.sesiones.toLocaleString("es-ES")}</div>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Usuarios</div>
+          <div className="text-2xl font-semibold text-foreground mt-1">{data.usuarios.toLocaleString("es-ES")}</div>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Páginas vistas</div>
+          <div className="text-2xl font-semibold text-foreground mt-1">{data.pageviews.toLocaleString("es-ES")}</div>
+        </div>
+        <div className="rounded-lg border border-border p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Duración media</div>
+          <div className="text-2xl font-semibold text-foreground mt-1">{Math.round(data.duracionMedia)}s</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div>
+          <div className="text-xs font-semibold text-foreground mb-2">Top páginas</div>
+          <ul className="space-y-1.5">
+            {data.topPaginas.length === 0 ? (<li className="text-xs text-muted-foreground italic">Sin datos</li>) :
+              data.topPaginas.map((p) => (
+                <li key={p.ruta} className="flex items-center justify-between text-xs">
+                  <span className="truncate text-foreground">{p.ruta || "/"}</span>
+                  <span className="shrink-0 ml-3 tabular-nums text-muted-foreground">{p.views}</span>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-foreground mb-2">Fuentes de tráfico</div>
+          <ul className="space-y-1.5">
+            {data.topFuentes.length === 0 ? (<li className="text-xs text-muted-foreground italic">Sin datos</li>) :
+              data.topFuentes.map((f) => (
+                <li key={f.fuente} className="flex items-center justify-between text-xs">
+                  <span className="truncate text-foreground capitalize">{f.fuente || "(direct)"}</span>
+                  <span className="shrink-0 ml-3 tabular-nums text-muted-foreground">{f.sesiones}</span>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }
