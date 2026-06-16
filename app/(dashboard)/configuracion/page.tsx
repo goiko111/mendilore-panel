@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { ShieldCheck, FileText, ChevronRight } from "lucide-react";
+import { EvidenciasBlock } from "@/components/evidencias-block";
 import { formatDate } from "@/lib/utils";
 
 export const metadata = { title: "Configuración" };
@@ -160,6 +161,7 @@ export default async function ConfiguracionPage() {
           </ul>
         </section>
       </div>
+        <EvidenciasBlock />
     </div>
   );
 }
