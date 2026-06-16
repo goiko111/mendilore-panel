@@ -7,6 +7,7 @@ import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ResumenConfigurable } from "./resumen-configurable";
 import { HousekeepingBlock } from "@/components/housekeeping-block";
+import { AlertasInlineBlock } from "@/components/alertas-inline-block";
 
 export const metadata = { title: "Resumen" };
 
