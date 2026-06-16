@@ -257,7 +257,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                         return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${color}`}>{label}</span>;
                       })()}
                     </td>
-                    <td className="px-5 py-3"><AccionesReserva id={r.id} estado_cobro={r.estado_cobro} huesped_email={(r.huespedes as any)?.email} /></td>
+                    <td className="px-5 py-3"><AccionesReserva id={r.id} estado_cobro={r.estado_cobro} huesped_email={(r.huespedes as any)?.email} firmada={aceptadas.has(r.id)} /></td>
                   </tr>
                 );
               })}
