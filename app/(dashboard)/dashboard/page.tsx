@@ -37,13 +37,18 @@ export default async function DashboardPage() {
     .lt("fecha_out", tomorrow)
     .neq("estado_cobro", "cancelado");
 
-  // C) Huéspedes presentes (entraron hoy o antes, salen hoy o después)
-  const { count: cntPresentes } = await supabase
+  // C) Personas alojadas ahora (cuenta reservas activas y suma personas — fallback nº reservas si no hay dato)
+  const { data: presentesData, count: cntReservasActivas } = await supabase
     .from("reservas")
-    .select("id", { count: "exact", head: true })
+    .select("id, numero_huespedes", { count: "exact" })
     .lte("fecha_in", todayStr)
     .gt("fecha_out", todayStr)
     .neq("estado_cobro", "cancelado");
+  const cntPresentes = (presentesData ?? []).reduce((sum: number, r: any) => {
+    const n = Number(r?.numero_huespedes);
+    return sum + (isNaN(n) || n <= 0 ? 2 : n);
+  }, 0);
+  const reservasActivasCount = cntReservasActivas ?? 0;
 
   // D) Llegadas mañana
   const dayAfterTomorrow = new Date(today.getTime() + 2 * 86400_000).toISOString().slice(0, 10);
@@ -175,10 +180,10 @@ export default async function DashboardPage() {
     // Operacionales
     checkins_hoy: { value: cntCheckinsHoy ?? 0, detail: (checkinsHoy ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
     checkouts_hoy: { value: cntCheckoutsHoy ?? 0, detail: (checkoutsHoy ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
-    huespedes_presentes: { value: cntPresentes ?? 0 },
+    huespedes_presentes: { value: cntPresentes ?? 0, hint: reservasActivasCount > 0 ? `${reservasActivasCount} ${reservasActivasCount === 1 ? "habitación ocupada" : "habitaciones ocupadas"}` : "Sin huéspedes" },
     llegadas_manana: { value: cntLlegadasManana ?? 0, detail: (llegadasManana ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
     cobros_14d: { value: cntCobros7d ?? 0, importe: cobros7dImporte },
-    habitaciones_libres: { value: libresHoy, total: 6 },
+    habitaciones_libres: { value: cntOcupadasHoy ?? 0, total: 6, hint: `${libresHoy} ${libresHoy === 1 ? "libre" : "libres"}` },
     proxima_llegada: { value: proxLlegada ? `${formatDate(proxLlegada.fecha_in)}` : '—', detail: proxLlegada ? `${(proxLlegada.huespedes as any)?.nombre ?? '—'} · ${proxLlegada.habitacion}` : '' },
     tareas_pendientes: { value: cntTareasHoy },
     // Financieros
