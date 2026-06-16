@@ -146,6 +146,43 @@ export default async function CompetenciaPage() {
         />
       ) : (
         <div className="space-y-6">
+
+          <div className="bg-card border border-border rounded-xl p-4">
+            <div className="flex flex-wrap items-start gap-x-6 gap-y-3 text-xs">
+              <div className="flex-1 min-w-[260px]">
+                <div className="text-sm font-semibold text-foreground mb-1">¿Cómo leer esta pantalla?</div>
+                <div className="text-muted-foreground leading-relaxed">
+                  Cada celda muestra el <strong>precio por noche</strong> del competidor para esa ventana de entrada.
+                  El color compara su precio con la media del mercado en esa misma ventana.
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-emerald-500"></span>
+                  <span className="text-foreground"><strong className="text-emerald-700 dark:text-emerald-400">Más barato</strong></span>
+                  <span className="text-muted-foreground">— al menos 10% por debajo de la media</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-slate-400"></span>
+                  <span className="text-foreground">En mercado</span>
+                  <span className="text-muted-foreground">— ±10% respecto a la media</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm bg-orange-500"></span>
+                  <span className="text-foreground"><strong className="text-orange-700 dark:text-orange-400">Más caro</strong></span>
+                  <span className="text-muted-foreground">— al menos 10% por encima</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center px-1.5 py-0 rounded-full text-[10px] font-medium bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400">Sold out</span>
+                  <span className="text-muted-foreground">— sin disponibilidad esa fecha</span>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-border text-[11px] text-muted-foreground">
+              <strong className="text-foreground">Origen:</strong> scraper propio sobre Booking.com vía Apify · captura diaria · {ventanas.length} ventanas configuradas · valor "/n" = precio por noche.
+            </div>
+          </div>
+
           <div className="bg-card border border-border rounded-xl overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
@@ -243,9 +280,6 @@ export default async function CompetenciaPage() {
             </table>
           </div>
 
-          <div className="bg-card border border-border rounded-xl p-4 text-xs text-muted-foreground">
-            <p>Cada celda muestra el precio por noche del competidor en esa ventana temporal. Verde = al menos 10% por debajo de la media. Naranja = al menos 10% por encima. "Sold out" = sin disponibilidad.</p>
-          </div>
         </div>
       )}
     </div>
