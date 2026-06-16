@@ -97,7 +97,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
   return (
     <div>
       <PageHeader
-        title="Reservas"
+        title="Reservas y exportación"
         description={`${reservas.length} reservas · ${totalNoches} noches · ${formatCurrency(totalImporte)} total · ✅ ${formatCurrency(totalCobrado)} cobrado · 🟡 ${formatCurrency(totalPendiente)} pendiente · ${totalFuturas} futuras / ${totalPasadas} pasadas`}
         actions={
           <Link
@@ -109,6 +109,9 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
           </Link>
         }
       />
+      <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 rounded-lg p-3 mb-4 text-xs text-emerald-900 dark:text-emerald-200">
+        <strong className="font-semibold">¿Para qué sirve esta pantalla?</strong> Complementa a MisterPlan con tres cosas que MrPlan no hace: exportación a Excel del histórico para contabilidad y subvenciones, botón rápido para marcar cobros sin entrar a MrPlan y envío del enlace de aceptación legal por reserva (Fase 3).
+      </div>
 
       {/* Filtro temporal pestañas */}
       <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1 border border-border w-fit mb-5">
