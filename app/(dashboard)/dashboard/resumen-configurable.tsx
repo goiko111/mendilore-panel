@@ -195,47 +195,47 @@ export function ResumenConfigurable({ data }: { data: Record<string, any> }) {
     const d = data[key] ?? {};
     switch (key) {
       case "checkins_hoy":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
           hint={d.detail?.length > 0 ? d.detail.slice(0, 2).join(" · ") : "Sin llegadas hoy"} />;
       case "checkouts_hoy":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
           hint={d.detail?.length > 0 ? d.detail.slice(0, 2).join(" · ") : "Sin salidas hoy"} />;
       case "huespedes_presentes":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} hint="En la casa ahora" />;
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="En la casa ahora" />;
       case "llegadas_manana":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
           hint={d.detail?.length > 0 ? d.detail.slice(0, 2).join(" · ") : "Sin llegadas mañana"} />;
       case "cobros_14d":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
           hint={d.importe ? fmtEur(d.importe) : "Sin pendientes"} accent={d.value > 0 ? "amber" : "default"} />;
       case "habitaciones_libres":
-        return <KPICard label={def.label} value={`${d.value ?? 0} / ${d.total ?? 6}`} emoji={def.emoji} hint="Disponibles hoy" />;
+        return <KPICard label={def.label} value={`${d.value ?? 0} / ${d.total ?? 6}`} emoji={def.emoji} tooltip={def.tooltip} hint="Disponibles hoy" />;
       case "proxima_llegada":
-        return <KPICard label={def.label} value={String(d.value ?? "—")} emoji={def.emoji} hint={d.detail || "Sin reservas futuras"} />;
+        return <KPICard label={def.label} value={String(d.value ?? "—")} emoji={def.emoji} tooltip={def.tooltip} hint={d.detail || "Sin reservas futuras"} />;
       case "tareas_pendientes":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
           hint={d.value > 0 ? "Ver /tareas" : "Sin pendientes"} accent={d.value > 0 ? "amber" : "default"} />;
       case "ingresos_mes":
-        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} hint="Acumulado mes" />;
+        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Acumulado mes" />;
       case "ingresos_vs_target":
         return <KPICard label={def.label}
           value={d.value !== null && d.value !== undefined ? `${d.value.toFixed(0)}%` : "—"}
-          emoji={def.emoji}
+          emoji={def.emoji} tooltip={def.tooltip}
           hint={d.target ? `Target: ${fmtEur(d.target)}` : "Define en /objetivos"}
           accent={d.value !== null && d.value >= 100 ? "green" : d.value !== null && d.value >= 70 ? "amber" : "default"} />;
       case "pipeline_30d":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji}
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
           hint={d.importe ? `${fmtEur(d.importe)} confirmado` : "Sin reservas futuras"} />;
       case "pace_7d":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} hint="Reservas nuevas 7d" />;
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Reservas nuevas 7d" />;
       case "cobros_pendientes_total":
-        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} hint="Por cobrar" accent={d.value > 0 ? "amber" : "default"} />;
+        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Por cobrar" accent={d.value > 0 ? "amber" : "default"} />;
       case "reservas_nuevas_hoy":
-        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} hint="Pickup del día" />;
+        return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Pickup del día" />;
       case "cobrado_mes":
-        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} hint="Confirmado cobrado" accent="green" />;
+        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Confirmado cobrado" accent="green" />;
       case "tasa_cobro":
-        return <KPICard label={def.label} value={d.value !== null && d.value !== undefined ? `${d.value.toFixed(0)}%` : "—"} emoji={def.emoji} hint={`${d.cobradas ?? 0} / ${d.total ?? 0} reservas`} accent={d.value >= 80 ? "green" : d.value >= 50 ? "amber" : "default"} />;
+        return <KPICard label={def.label} value={d.value !== null && d.value !== undefined ? `${d.value.toFixed(0)}%` : "—"} emoji={def.emoji} tooltip={def.tooltip} hint={`${d.cobradas ?? 0} / ${d.total ?? 0} reservas`} accent={d.value >= 80 ? "green" : d.value >= 50 ? "amber" : "default"} />;
     }
   }
 
@@ -315,7 +315,7 @@ function KPICard({ label, value, hint, emoji, accent = "default", tooltip }: { l
   return (
     <div className={`rounded-xl border p-3 sm:p-4 ${accentBg}`}>
       <div className="flex items-start justify-between mb-2">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">{label}</div>
+        <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium flex items-center">{label}{tooltip ? <KPITooltip {...tooltip} /> : null}</div>
         {emoji && <div className="text-base leading-none">{emoji}</div>}
       </div>
       <div className="text-xl sm:text-2xl font-semibold text-foreground tabular-nums">{value}</div>
