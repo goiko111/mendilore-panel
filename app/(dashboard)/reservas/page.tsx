@@ -56,6 +56,16 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
 
   const { data: reservasRaw } = await query;
 
+  // Cargar aceptaciones de las reservas mostradas (Fase 3)
+  const reservaIds = (reservasRaw ?? []).map((r: any) => r.id);
+  const { data: aceptacionesData } = reservaIds.length
+    ? await supabase
+        .from("aceptaciones_condiciones")
+        .select("reserva_id")
+        .in("reserva_id", reservaIds)
+    : { data: [] };
+  const aceptadas = new Set<string>((aceptacionesData ?? []).map((a: any) => a.reserva_id));
+
   // Filtro client-side por texto libre (q) sobre nombre/email del huésped
   const q = sp.q?.toLowerCase().trim();
   const reservas = q
@@ -203,6 +213,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                 <th className="text-left font-medium px-5 py-2.5">Reserva</th>
                 <th className="text-left font-medium px-5 py-2.5">Cobro</th>
                 <th className="text-left font-medium px-5 py-2.5">Canal</th>
+                <th className="text-left font-medium px-5 py-2.5">Firma legal</th>
                 <th className="text-left font-medium px-5 py-2.5">Acciones</th>
               </tr>
             </thead>
@@ -222,6 +233,30 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                     <td className="px-5 py-3 text-muted-foreground">{r.estado_reserva}</td>
                     <td className="px-5 py-3 text-muted-foreground">{r.estado_cobro}</td>
                     <td className="px-5 py-3 text-muted-foreground">{r.canal ?? "—"}</td>
+                    <td className="px-5 py-3">
+                      {(() => {
+                        const firmada = aceptadas.has(r.id);
+                        if (firmada) {
+                          return <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-xs font-medium">✓ Firmada</span>;
+                        }
+                        // Calcular días hasta check-in
+                        const ci = new Date(r.fecha_in + "T00:00:00");
+                        const hoy = new Date(today + "T00:00:00");
+                        const dias = Math.round((ci.getTime() - hoy.getTime()) / 86400000);
+                        if (r.estado_reserva === "cancelada" || r.estado_reserva === "no_show") {
+                          return <span className="text-muted-foreground text-xs">—</span>;
+                        }
+                        if (dias < -1) {
+                          return <span className="text-muted-foreground text-xs">—</span>;
+                        }
+                        const color = dias <= 0 ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-950 dark:text-red-300 dark:border-red-800" 
+                                    : dias <= 1 ? "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800"
+                                    : dias <= 3 ? "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800"
+                                    : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700";
+                        const label = dias <= 0 ? "⚠ Pendiente" : `Pendiente (${dias}d)`;
+                        return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${color}`}>{label}</span>;
+                      })()}
+                    </td>
                     <td className="px-5 py-3"><AccionesReserva id={r.id} estado_cobro={r.estado_cobro} huesped_email={(r.huespedes as any)?.email} /></td>
                   </tr>
                 );
