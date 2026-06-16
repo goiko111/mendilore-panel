@@ -256,12 +256,12 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       {/* KPIs operacionales MrPlan */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <StatCard
-          label="Lead time medio"
+          label="Antelación media de reserva"
           value={leadTimes.length > 0 ? `${leadTimeMedio.toFixed(1)} d` : "—"}
           hint={leadTimes.length > 0 ? `${leadTimes.length} reservas 90d` : "Esperando más reservas"}
         />
         <StatCard
-          label="ALOS — estancia media"
+          label="Estancia media (ALOS)"
           value={alosMedio > 0 ? `${alosMedio.toFixed(1)} noches` : "—"}
           hint={alosMedio > 0 ? `${nochesArr.length} reservas` : "Esperando más reservas"}
         />
@@ -271,17 +271,17 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           hint={totalMes > 0 ? `${canceladasMes} de ${totalMes}` : "Sin reservas"}
         />
         <StatCard
-          label="Pace 7 d → futuro"
+          label="Ritmo de reservas (últimos 7d)"
           value={String(paceCount)}
-          hint={paceCount > 0 ? `${formatCurrency(paceRevenue)} pipeline` : "Sin nuevas"}
+          hint={paceCount > 0 ? `${formatCurrency(paceRevenue)} en cartera` : "Sin nuevas reservas"}
         />
       </div>
 
       {/* Booking pace 30/60/90 — pipeline futuro */}
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
-        <h2 className="text-base font-semibold text-foreground mb-1">Booking pace — pipeline futuro</h2>
+        <h2 className="text-base font-semibold text-foreground mb-1">Ritmo de reservas futuras</h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Reservas confirmadas con check-in en cada ventana · {formatCurrency(paceRev90)} pipeline total 90d
+          Reservas confirmadas con entrada en cada ventana · {formatCurrency(paceRev90)} pipeline total 90d
         </p>
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg border border-border p-3 text-center">
@@ -305,7 +305,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       {/* Channel mix */}
       {channelMix.length > 0 && totalChannelRevenue > 0 && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
-          <h2 className="text-base font-semibold text-foreground mb-1">Channel mix — últimos 30 días</h2>
+          <h2 className="text-base font-semibold text-foreground mb-1">Reparto por canal — últimos 30 días</h2>
           <p className="text-xs text-muted-foreground mb-4">
             Distribución de ingresos por canal · {formatCurrency(totalChannelRevenue)} · {(canalRows ?? []).length} reservas
           </p>
@@ -332,7 +332,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
 
       {/* Heatmap calendario ocupación próximos 90 días */}
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
-        <h2 className="text-base font-semibold text-foreground mb-1">Heatmap ocupación — próximos 90 días</h2>
+        <h2 className="text-base font-semibold text-foreground mb-1">Mapa de calor — ocupación próximos 90 días</h2>
         <p className="text-xs text-muted-foreground mb-4">
           Cada celda = 1 día · color verde más intenso = mayor ocupación · gris = sin datos
         </p>
