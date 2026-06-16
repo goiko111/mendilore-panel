@@ -12,20 +12,20 @@ type KPIKey =
 const KPI_DEFS: Record<KPIKey, { label: string; emoji: string; group: string }> = {
   checkins_hoy: { label: "Check-ins hoy", emoji: "🛬", group: "Operacional" },
   checkouts_hoy: { label: "Check-outs hoy", emoji: "🛫", group: "Operacional" },
-  huespedes_presentes: { label: "Huéspedes presentes", emoji: "👥", group: "Operacional" },
+  huespedes_presentes: { label: "Personas alojadas ahora", emoji: "👥", group: "Operacional" },
   llegadas_manana: { label: "Llegadas mañana", emoji: "📅", group: "Operacional" },
-  habitaciones_libres: { label: "Habitaciones libres hoy", emoji: "🛏️", group: "Operacional" },
+  habitaciones_libres: { label: "Habitaciones ocupadas hoy", emoji: "🛏️", group: "Operacional" },
   proxima_llegada: { label: "Próxima llegada", emoji: "⏭️", group: "Operacional" },
   tareas_pendientes: { label: "Tareas pendientes", emoji: "📋", group: "Operacional" },
   reservas_nuevas_hoy: { label: "Reservas nuevas hoy", emoji: "✨", group: "Operacional" },
-  cobros_14d: { label: "Cobros vencen <14d", emoji: "💰", group: "Cobros" },
+  cobros_14d: { label: "Cobros próximos a vencer (14d)", emoji: "💰", group: "Cobros" },
   cobros_pendientes_total: { label: "Pendiente de cobro total", emoji: "💵", group: "Cobros" },
   cobrado_mes: { label: "Cobrado este mes", emoji: "✅", group: "Cobros" },
   tasa_cobro: { label: "Tasa de cobro %", emoji: "📊", group: "Cobros" },
   ingresos_mes: { label: "Ingresos del mes", emoji: "📈", group: "Financiero" },
-  ingresos_vs_target: { label: "Ingresos vs target", emoji: "🎯", group: "Financiero" },
-  pipeline_30d: { label: "Pipeline 30 días", emoji: "🔮", group: "Financiero" },
-  pace_7d: { label: "Pace booking 7d", emoji: "⚡", group: "Financiero" }
+  ingresos_vs_target: { label: "Ingresos vs año anterior", emoji: "📈", group: "Financiero" },
+  pipeline_30d: { label: "Cartera próximos 30 días", emoji: "🔮", group: "Financiero" },
+  pace_7d: { label: "Ritmo de reservas 7d", emoji: "⚡", group: "Financiero" }
 };
 
 const DEFAULT_VISIBLES: KPIKey[] = ["checkins_hoy", "checkouts_hoy", "cobros_14d", "pipeline_30d", "cobrado_mes", "habitaciones_libres", "ingresos_mes", "pipeline_30d"];
