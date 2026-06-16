@@ -137,10 +137,38 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
 
       {/* KPIs globales */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        <StatCard label="Únicos" value={String(count ?? 0)} hint="En base de datos" />
-        <StatCard label="Repetidores" value={String(totalRepetidores)} hint={count ? `${((totalRepetidores / (count ?? 1)) * 100).toFixed(0)}% del total` : "—"} />
-        <StatCard label="Con reserva futura" value={String(totalConFuturas)} hint="Llegada próxima" />
-        <StatCard label="Países distintos" value={String(paisesUnicos.length)} hint="Origen del huésped" />
+        <StatCard label="Únicos" value={String(count ?? 0)} hint="En base de datos"
+          tooltip={{
+            mide: "Personas distintas que han hecho alguna reserva (no se duplican aunque tengan varias estancias).",
+            calculo: "Conteo de registros en la tabla huespedes (filtros aplicados respetan país y fuente).",
+            origen: "Cada reserva nueva crea o reutiliza la ficha huésped por email coincidente.",
+            sistemas: "BD propia (tabla huespedes) — alimentada desde MisterPlan vía scraper.",
+          }}
+        />
+        <StatCard label="Repetidores" value={String(totalRepetidores)} hint={count ? `${((totalRepetidores / (count ?? 1)) * 100).toFixed(0)}% del total` : "—"}
+          tooltip={{
+            mide: "Huéspedes que han tenido MÁS DE UNA reserva (no canceladas) — clientes fieles.",
+            calculo: "Por cada huésped, contar reservas (excluyendo canceladas). Si conteo > 1 → repetidor.",
+            origen: "Cálculo en tiempo real sobre la tabla reservas filtrando estado != cancelado.",
+            sistemas: "BD propia (reservas + huespedes). Por debajo, MisterPlan es la fuente original.",
+          }}
+        />
+        <StatCard label="Con reserva futura" value={String(totalConFuturas)} hint="Llegada próxima"
+          tooltip={{
+            mide: "Huéspedes que tienen al menos una reserva con fecha de entrada >= hoy.",
+            calculo: "Filtrar reservas donde fecha_in >= hoy y contar huéspedes distintos.",
+            origen: "Tabla reservas (alimentada desde MisterPlan).",
+            sistemas: "BD propia. Reservas futuras llegan al panel cada 2 h vía scraper MisterPlan.",
+          }}
+        />
+        <StatCard label="Países distintos" value={String(paisesUnicos.length)} hint="Origen del huésped"
+          tooltip={{
+            mide: "Cuántas nacionalidades distintas hay representadas entre vuestros huéspedes.",
+            calculo: "Para cada huésped se infiere país a partir de: campo país explícito, TLD del email (.fr, .de, .it...), prefijo telefónico internacional (+33, +49...) o nombre típico holandés/alemán/francés. Contar valores únicos no nulos.",
+            origen: "Inferencia automática en cliente — los emails proxy de Booking (@guest.booking.com) no permiten deducir el país; ahí se usa el nombre y el teléfono.",
+            sistemas: "BD propia + heurística en lectura. MisterPlan no expone nacionalidad estandarizada.",
+          }}
+        />
       </div>
 
       <form method="get" className="bg-card border border-border rounded-xl p-4 mb-5 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
