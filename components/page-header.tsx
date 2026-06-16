@@ -10,10 +10,12 @@ export function PageHeader({ title, description, actions }: { title: string; des
   );
 }
 
-export function StatCard({ label, value, hint, trend }: { label: string; value: string; hint?: string; trend?: "up" | "down" | "flat" }) {
+import { KPITooltip } from "./kpi-tooltip";
+
+export function StatCard({ label, value, hint, trend, tooltip }: { label: string; value: string; hint?: string; trend?: "up" | "down" | "flat"; tooltip?: { mide: string; calculo: string; origen: string; sistemas: string } }) {
   return (
     <div className="bg-card border border-border rounded-xl p-5">
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center">{label}{tooltip ? <KPITooltip {...tooltip} /> : null}</div>
       <div className="text-2xl font-semibold text-foreground mt-2">{value}</div>
       {hint && (
         <div className="text-xs text-muted-foreground mt-1.5">
