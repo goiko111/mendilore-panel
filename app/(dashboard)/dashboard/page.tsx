@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ResumenConfigurable } from "./resumen-configurable";
+import { HousekeepingBlock } from "@/components/housekeeping-block";
 
 export const metadata = { title: "Resumen" };
 
@@ -197,6 +198,35 @@ export default async function DashboardPage() {
     cobrado_mes: { value: cobradoMes },
     tasa_cobro: { value: tasaCobro, cobradas: cobradasMes, total: totalReservasMes }
   };
+
+  // Housekeeping (bloque 3 revisión Juan) — habitaciones ocupadas con sus contadores de cambio
+  let hkRows: any[] = [];
+  let hkConfig = { cadencia_sabanas: 3, cadencia_toallas: 2 };
+  let hkReservaMap: Record<string, string> = {};
+  try {
+    const { data: hkData } = await supabase.rpc("calcular_housekeeping_pendiente");
+    hkRows = (hkData ?? []).map((r: any) => ({
+      habitacion: r.habitacion,
+      huesped: r.huesped,
+      fecha_in: r.fecha_in,
+      noches_consecutivas: r.noches_consecutivas ?? 0,
+      noches_desde_ultimo_cambio_sabanas: r.noches_desde_ultimo_cambio_sabanas ?? r.noches_consecutivas ?? 0,
+      noches_desde_ultimo_cambio_toallas: r.noches_desde_ultimo_cambio_toallas ?? r.noches_consecutivas ?? 0
+    }));
+    // Buscar reserva_id por habitación para vincular el cambio
+    const { data: reservasActivas } = await supabase
+      .from("reservas")
+      .select("id, habitacion")
+      .lte("fecha_in", todayStr)
+      .gt("fecha_out", todayStr)
+      .neq("estado_cobro", "cancelado");
+    hkReservaMap = (reservasActivas ?? []).reduce((acc: any, r: any) => {
+      acc[r.habitacion] = r.id;
+      return acc;
+    }, {});
+  } catch {
+    // Si la migration 0014 aún no está aplicada, hkRows queda vacío
+  }
 
   return (
     <div>
