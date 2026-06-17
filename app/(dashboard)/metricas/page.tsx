@@ -20,14 +20,76 @@ const PERIODS: { key: Period; label: string; days: number }[] = [
   { key: "365d", label: "1 año", days: 365 }
 ];
 
-export default async function MetricasPage({ searchParams }: { searchParams: Promise<{ p?: string }> }) {
-  const sp = await searchParams;
-  const selected: Period = (PERIODS.find(p => p.key === sp.p)?.key ?? "30d") as Period;
-  const lookbackDays = PERIODS.find(p => p.key === selected)!.days;
+// Atajos de fechas calculados dinámicamente respecto al "hoy" actual.
+// Si la temporada ya pasó este año se salta al año siguiente automáticamente.
+function calcularAtajos(today: Date): { key: string; label: string; desde: string; hasta: string }[] {
+  const año = today.getFullYear();
+  const fmt = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
+  // Verano: 1 jul - 31 ago del año actual (o siguiente si ya pasó)
+  let veranoY = año;
+  const veranoFinDate = new Date(Date.UTC(año, 7, 31));
+  if (today > veranoFinDate) veranoY = año + 1;
+  // Navidad: 22 dic - 6 ene
+  let navY = año;
+  if (today > new Date(Date.UTC(año + 1, 0, 6))) navY = año + 1;
+  // Semana Santa aproximada: 1ª quincena de abril del próximo año si ya pasó
+  // (no calculo Gregoriana exacta — uso rango ámbar 20 mar - 12 abr).
+  let ssY = año;
+  if (today > new Date(Date.UTC(año, 3, 12))) ssY = año + 1;
+  // Puente Constitución: 4-8 dic
+  let constY = año;
+  if (today > new Date(Date.UTC(año, 11, 8))) constY = año + 1;
 
+  // Mes y año actual
+  const m = today.getMonth(); // 0-indexed
+  const ultimoDiaMes = new Date(Date.UTC(año, m + 1, 0)).getUTCDate();
+
+  return [
+    { key: "mes", label: "Mes actual", desde: fmt(año, m + 1, 1), hasta: fmt(año, m + 1, ultimoDiaMes) },
+    { key: "anio", label: "Año actual", desde: fmt(año, 1, 1), hasta: fmt(año, 12, 31) },
+    { key: "verano", label: `Verano ${veranoY}`, desde: fmt(veranoY, 7, 1), hasta: fmt(veranoY, 8, 31) },
+    { key: "navidad", label: `Navidad ${navY}`, desde: fmt(navY, 12, 22), hasta: fmt(navY + 1, 1, 6) },
+    { key: "ss", label: `Sem. Santa ${ssY}`, desde: fmt(ssY, 3, 20), hasta: fmt(ssY, 4, 12) },
+    { key: "const", label: `Puente ${constY}`, desde: fmt(constY, 12, 4), hasta: fmt(constY, 12, 8) }
+  ];
+}
+
+export default async function MetricasPage({ searchParams }: { searchParams: Promise<{ p?: string; desde?: string; hasta?: string; atajo?: string }> }) {
+  const sp = await searchParams;
   const supabase = await createClient();
   const today = new Date();
-  const desde = new Date(today.getTime() - lookbackDays * 86400_000).toISOString().slice(0, 10);
+  const ATAJOS = calcularAtajos(today);
+
+  // Tres modos: (a) ?desde=YYYY-MM-DD&hasta=... — rango libre
+  //             (b) ?atajo=verano|mes|anio|... — un atajo precomputado
+  //             (c) ?p=7d|30d|90d|365d — lookback clásico (default)
+  let desde: string, hasta: string, lookbackDays: number;
+  let selected: Period | null = null;
+  let atajoActivo: string | null = null;
+
+  if (sp.desde && sp.hasta && /^\d{4}-\d{2}-\d{2}$/.test(sp.desde) && /^\d{4}-\d{2}-\d{2}$/.test(sp.hasta)) {
+    desde = sp.desde;
+    hasta = sp.hasta;
+    lookbackDays = Math.max(1, Math.round((new Date(hasta).getTime() - new Date(desde).getTime()) / 86400_000));
+  } else if (sp.atajo) {
+    const a = ATAJOS.find(x => x.key === sp.atajo);
+    if (a) {
+      desde = a.desde;
+      hasta = a.hasta;
+      atajoActivo = a.key;
+      lookbackDays = Math.max(1, Math.round((new Date(hasta).getTime() - new Date(desde).getTime()) / 86400_000));
+    } else {
+      selected = "30d";
+      lookbackDays = 30;
+      desde = new Date(today.getTime() - lookbackDays * 86400_000).toISOString().slice(0, 10);
+      hasta = today.toISOString().slice(0, 10);
+    }
+  } else {
+    selected = (PERIODS.find(p => p.key === sp.p)?.key ?? "30d") as Period;
+    lookbackDays = PERIODS.find(p => p.key === selected)!.days;
+    desde = new Date(today.getTime() - lookbackDays * 86400_000).toISOString().slice(0, 10);
+    hasta = today.toISOString().slice(0, 10);
+  }
   const todayStr = today.toISOString().slice(0, 10);
   // Rango extendido para el gráfico: 60d atrás → 90d adelante (cubre histórico + pipeline)
   const desdeChart = new Date(today.getTime() - 60 * 86400_000).toISOString().slice(0, 10);
@@ -38,6 +100,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .from("metricas_dia")
     .select("fecha, occupancy_pct, adr, revpar, ingresos_dia, habitaciones_ocupadas")
     .gte("fecha", desde)
+    .lte("fecha", hasta)
     .lte("fecha", todayStr)
     .order("fecha", { ascending: true });
 
@@ -223,21 +286,45 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         description={`KPIs · período seleccionado · Casa Mendilore`}
       />
 
-      {/* Selector lookback */}
-      <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1 border border-border w-fit mb-5">
-        {PERIODS.map((p) => (
-          <Link
-            key={p.key}
-            href={`/metricas?p=${p.key}`}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition ${
-              selected === p.key
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
-          >
-            {p.label}
-          </Link>
-        ))}
+      {/* Selector lookback + atajos */}
+      <div className="flex flex-wrap items-start gap-3 mb-5">
+        <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1 border border-border w-fit">
+          {PERIODS.map((p) => (
+            <Link
+              key={p.key}
+              href={`/metricas?p=${p.key}`}
+              className={`px-3 py-1.5 text-xs font-medium rounded transition ${
+                selected === p.key
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              {p.label}
+            </Link>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Atajos:</span>
+          {ATAJOS.map((a) => (
+            <Link
+              key={a.key}
+              href={`/metricas?atajo=${a.key}`}
+              className={`px-2.5 py-1 text-[11px] font-medium rounded border transition ${
+                atajoActivo === a.key
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted"
+              }`}
+              title={`${a.desde} → ${a.hasta}`}
+            >
+              {a.label}
+            </Link>
+          ))}
+        </div>
+        {(atajoActivo || (sp.desde && sp.hasta)) && (
+          <div className="text-[11px] text-muted-foreground self-center">
+            Rango: <strong className="text-foreground">{desde}</strong> → <strong className="text-foreground">{hasta}</strong> ({lookbackDays} días)
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
