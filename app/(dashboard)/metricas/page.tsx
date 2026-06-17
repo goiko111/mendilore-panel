@@ -346,21 +346,45 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           label="Antelación media de reserva"
           value={leadTimes.length > 0 ? `${leadTimeMedio.toFixed(1)} d` : "—"}
           hint={leadTimes.length > 0 ? `${leadTimes.length} reservas 90d` : "Esperando más reservas"}
+          tooltip={{
+            mide: "Cuánto tiempo antes del check-in se hacen las reservas, de media. Indica cuánta visibilidad de futuro tenéis.",
+            calculo: "Por cada reserva confirmada con check-in en los próximos 90 días: días entre la fecha de creación y fecha_in. Se promedia el resultado.",
+            origen: "MisterPlan — cada reserva trae su timestamp de creación y su check-in.",
+            sistemas: "MrPlan → robot → BD del panel. Cuanto más alto el número, más planificado el negocio.",
+          }}
         />
         <StatCard
           label="Estancia media (ALOS)"
           value={alosMedio > 0 ? `${alosMedio.toFixed(1)} noches` : "—"}
           hint={alosMedio > 0 ? `${nochesArr.length} reservas` : "Esperando más reservas"}
+          tooltip={{
+            mide: "ALOS (Average Length of Stay) — cuántas noches dura cada estancia, de media. Importante porque a más noches, menos rotación de limpieza y mejor margen operativo.",
+            calculo: "SUM(noches) ÷ COUNT(reservas) sobre reservas no canceladas del periodo.",
+            origen: "MisterPlan — cada reserva trae sus noches calculadas (fecha_out - fecha_in).",
+            sistemas: "MrPlan → robot → BD del panel.",
+          }}
         />
         <StatCard
           label="Cancel rate (mes)"
           value={totalMes > 0 ? `${cancelRate.toFixed(1)}%` : "—"}
           hint={totalMes > 0 ? `${canceladasMes} de ${totalMes}` : "Sin reservas"}
+          tooltip={{
+            mide: "Porcentaje de reservas del mes en curso que han acabado canceladas o como no-show.",
+            calculo: "(reservas canceladas + no_show del mes) ÷ (total reservas del mes) × 100",
+            origen: "MisterPlan — el estado de la reserva refleja la cancelación.",
+            sistemas: "MrPlan → robot → BD del panel. Si sube respecto al histórico, suele ser señal de problema con un canal o política.",
+          }}
         />
         <StatCard
           label="Ritmo de reservas (últimos 7d)"
           value={String(paceCount)}
           hint={paceCount > 0 ? `${formatCurrency(paceRevenue)} en cartera` : "Sin nuevas reservas"}
+          tooltip={{
+            mide: "Cuántas reservas nuevas han entrado en los últimos 7 días (creadas, no llegadas).",
+            calculo: "COUNT(reservas) WHERE created_at >= hace 7 días. La cartera es la SUMA del importe_total de esas reservas.",
+            origen: "MisterPlan — created_at de cada reserva.",
+            sistemas: "MrPlan → robot → BD del panel. Útil para ver si esta semana está entrando más o menos volumen que la anterior.",
+          }}
         />
       </div>
 
