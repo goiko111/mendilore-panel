@@ -327,6 +327,23 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         )}
       </div>
 
+      {/* Nav de secciones — Bloque 8 */}
+      <nav className="flex flex-wrap items-center gap-2 mb-6 pb-3 border-b border-border sticky top-0 bg-background/95 backdrop-blur z-30 pt-1">
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground mr-1">Ir a:</span>
+        <a href="#operativa" className="text-xs font-medium px-2.5 py-1 rounded border border-border bg-card hover:bg-muted text-foreground transition">1. Operativa</a>
+        <a href="#yoy" className="text-xs font-medium px-2.5 py-1 rounded border border-border bg-card hover:bg-muted text-foreground transition">2. Año anterior (YoY)</a>
+        <a href="#canales" className="text-xs font-medium px-2.5 py-1 rounded border border-border bg-card hover:bg-muted text-foreground transition">3. Canales</a>
+        <a href="#resto" className="text-xs font-medium px-2.5 py-1 rounded border border-border bg-card hover:bg-muted text-foreground transition">4. Resto</a>
+      </nav>
+
+      {/* ============ 1. SECCION OPERATIVA ============ */}
+      <section id="operativa" className="scroll-mt-20 mb-8">
+        <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <span className="inline-flex items-center justify-center size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">1</span>
+          Operativa
+          <span className="text-[10px] font-normal text-muted-foreground normal-case tracking-normal">— Ocupacion, ADR, ingresos y noches vendidas del periodo seleccionado</span>
+        </h2>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `Últimos ${lookbackDays} días`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "(noches reservadas ÷ noches disponibles totales) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
         <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={hayComparativa ? `${varPct(adrMedio, adrYA) ?? "—"} vs año anterior` : `${totalNoches} noches`} tooltip={{ mide: "ADR (Average Daily Rate) — precio medio por habitación vendida en el periodo.", calculo: "ingresos totales del periodo ÷ noches vendidas", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
@@ -388,6 +405,69 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         />
       </div>
 
+      </section>
+
+      {/* ============ 2. SECCION YoY ============ */}
+      <section id="yoy" className="scroll-mt-20 mb-8">
+        <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <span className="inline-flex items-center justify-center size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">2</span>
+          Ano anterior (YoY)
+          <span className="text-[10px] font-normal text-muted-foreground normal-case tracking-normal">— Comparativa vs mismo periodo del ano anterior</span>
+        </h2>
+        {hayComparativa ? (
+          <div className="bg-card border border-border rounded-xl p-5 mb-6">
+            <p className="text-xs text-muted-foreground mb-3">
+              Las variaciones YoY aparecen como hints debajo de cada KPI principal en la seccion Operativa. Para tener cobertura completa de YoY hace falta haber cargado al menos 12 meses de historico desde MisterPlan.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Ocupacion</div>
+                <div className="text-sm font-semibold text-foreground mt-1">{varPct(occupancyMedia, occupancyYA) ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground">{formatPercent(occupancyYA)} hace 1 ano</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">ADR</div>
+                <div className="text-sm font-semibold text-foreground mt-1">{varPct(adrMedio, adrYA) ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground">{formatCurrency(adrYA)} hace 1 ano</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Ingresos</div>
+                <div className="text-sm font-semibold text-foreground mt-1">{varPct(totalIngresos, totalIngresosYA) ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground">{formatCurrency(totalIngresosYA)} hace 1 ano</div>
+              </div>
+              <div className="rounded-lg border border-border p-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Noches</div>
+                <div className="text-sm font-semibold text-foreground mt-1">{varPct(totalNoches, totalNochesYA) ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground">{totalNochesYA} hace 1 ano</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-xl p-5 mb-6">
+            <div className="flex items-start gap-3">
+              <div className="text-amber-700 dark:text-amber-400 text-lg leading-none">📊</div>
+              <div className="text-xs">
+                <div className="text-sm font-semibold text-foreground mb-1">Comparativa YoY no disponible aun</div>
+                <p className="text-muted-foreground leading-relaxed">
+                  Para mostrar comparativa con el mismo periodo del ano anterior necesitamos haber cargado los datos de MisterPlan de hace 1 ano. Actualmente solo hay datos de las ultimas semanas.
+                </p>
+                <p className="text-muted-foreground leading-relaxed mt-2">
+                  <strong>Proximo paso:</strong> cargar historico de MisterPlan de los ultimos 12 meses (planificado para proxima sesion, ~2 h).
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* ============ 3. SECCION CANALES ============ */}
+      <section id="canales" className="scroll-mt-20 mb-8">
+        <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <span className="inline-flex items-center justify-center size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">3</span>
+          Canales
+          <span className="text-[10px] font-normal text-muted-foreground normal-case tracking-normal">— Reparto de ingresos por canal de venta + pipeline futuro</span>
+        </h2>
+
       {/* Booking pace 30/60/90 — pipeline futuro */}
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
         <h2 className="text-base font-semibold text-foreground mb-1">Ritmo de reservas futuras</h2>
@@ -440,6 +520,16 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           </div>
         </div>
       )}
+
+      </section>
+
+      {/* ============ 4. SECCION RESTO ============ */}
+      <section id="resto" className="scroll-mt-20 mb-8">
+        <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <span className="inline-flex items-center justify-center size-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold">4</span>
+          Resto
+          <span className="text-[10px] font-normal text-muted-foreground normal-case tracking-normal">— Mapa de calor de ocupacion, visitas web (GA4) y grafico de evolucion</span>
+        </h2>
 
       {/* Heatmap calendario ocupación próximos 90 días */}
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
@@ -499,6 +589,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           <MetricasChart data={porSemana as any} />
         </div>
       )}
+      </section>
     </div>
   );
 }
