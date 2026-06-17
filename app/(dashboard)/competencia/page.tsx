@@ -53,8 +53,9 @@ export default async function CompetenciaPage() {
     const supabase = createAdminClient();
     const { data: c, error: ec } = await supabase
       .from("competidores")
-      .select("id, nombre, booking_url, estrellas")
+      .select("id, nombre, booking_url, estrellas, es_propia")
       .eq("activo", true)
+      .order("es_propia", { ascending: false })  // Casa Mendilore primero
       .order("nombre");
     if (ec) throw new Error(`competidores: ${ec.message}`);
     competidores = c ?? [];
@@ -87,6 +88,20 @@ export default async function CompetenciaPage() {
     if (s.check_in) ventanasSet.add(s.check_in);
   });
   const ventanas = Array.from(ventanasSet).sort();
+
+  // ADR propio Casa Mendilore por ventana (calculado desde reservas reales vía función SQL)
+  const adrPropioPorVentana = new Map<string, number>();
+  try {
+    const supabase2 = createAdminClient();
+    for (const checkIn of ventanas) {
+      const { data: adr } = await supabase2.rpc("adr_propio_para_fecha", { p_fecha: checkIn });
+      if (adr !== null && adr !== undefined && Number(adr) > 0) {
+        adrPropioPorVentana.set(checkIn, Number(adr));
+      }
+    }
+  } catch (err) {
+    // Si la función no existe aún (migration 0019 no aplicada), seguimos sin datos propios
+  }
 
   // Estadísticos por ventana (media, min, max, n disponibles)
   type Estadistico = { media: number; min: number; max: number; nDisponibles: number; nTotal: number; moneda: string };
@@ -201,11 +216,14 @@ export default async function CompetenciaPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {competidores.map((c: any) => (
-                  <tr key={c.id} className="hover:bg-muted/30">
-                    <td className="px-4 py-3 sticky left-0 bg-card z-10">
+                  <tr key={c.id} className={c.es_propia ? "bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40" : "hover:bg-muted/30"}>
+                    <td className={`px-4 py-3 sticky left-0 z-10 ${c.es_propia ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-card"}`}>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium text-foreground truncate">{c.nombre || "—"}</div>
+                          <div className="text-sm font-medium text-foreground truncate flex items-center gap-1.5">
+                            <span className="truncate">{c.nombre || "—"}</span>
+                            {c.es_propia && <span className="px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wide bg-emerald-600 text-white font-bold shrink-0">Nosotros</span>}
+                          </div>
                           <div className="text-[11px] text-muted-foreground mt-0.5">
                             {c.estrellas ? "★".repeat(c.estrellas) : ""}
                           </div>
@@ -218,8 +236,33 @@ export default async function CompetenciaPage() {
                       </div>
                     </td>
                     {ventanas.map((check_in) => {
-                      const s = ultimosPorVentana.get(`${c.id}|${check_in}`);
                       const est = estadisticosPorVentana.get(check_in);
+                      // Si es Casa Mendilore (nosotros), usar ADR propio calculado desde reservas
+                      if (c.es_propia) {
+                        const adr = adrPropioPorVentana.get(check_in);
+                        if (!adr || adr <= 0) {
+                          return (
+                            <td key={check_in} className="px-4 py-3 text-right text-muted-foreground italic text-[10px]">
+                              sin reservas
+                            </td>
+                          );
+                        }
+                        let colorClass = "text-foreground";
+                        if (est && est.nDisponibles >= 2) {
+                          const desv = ((adr - est.media) / est.media) * 100;
+                          if (desv <= -10) colorClass = "text-emerald-700 dark:text-emerald-400";
+                          else if (desv >= 10) colorClass = "text-orange-700 dark:text-orange-400";
+                        }
+                        return (
+                          <td key={check_in} className="px-4 py-3 text-right">
+                            <div className={`font-semibold ${colorClass}`}>
+                              {formatCurrency(adr, "EUR")}/n
+                            </div>
+                            <div className="text-[9px] text-muted-foreground">nuestro ADR</div>
+                          </td>
+                        );
+                      }
+                      const s = ultimosPorVentana.get(`${c.id}|${check_in}`);
                       if (!s) {
                         return (
                           <td key={check_in} className="px-4 py-3 text-right text-muted-foreground italic text-xs">—</td>
