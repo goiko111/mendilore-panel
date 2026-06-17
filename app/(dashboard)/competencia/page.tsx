@@ -202,11 +202,12 @@ export default async function CompetenciaPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
-                  <th key="hotel-col" className="text-left font-medium px-4 py-3 sticky left-0 bg-muted/50 z-10 min-w-[220px]">Hotel</th>
+                  <th key="hotel-col" className="text-left font-medium px-4 py-3 sticky left-0 bg-muted/50 z-10 min-w-[220px]" title="Hotel competidor o Casa Mendilore. Los competidores se cargan vía scraper diario de Booking; nuestra fila usa el ADR real de las reservas registradas.">Hotel</th>
                   {ventanas.map((check_in) => {
                     const lab = ventanaLabel(check_in);
                     return (
-                      <th key={check_in} className="text-right font-medium px-4 py-3 min-w-[120px]">
+                      <th key={check_in} className="text-right font-medium px-4 py-3 min-w-[120px]"
+                        title={`Ventana de entrada ${check_in}. Cada celda muestra el precio por noche (ADR) que ese hotel ofrece a un huésped que entrara esa fecha. El último snapshot capturado por el scraper se considera vigente.`}>
                         <div className="text-foreground capitalize">{lab.primary}</div>
                         <div className="text-[10px] text-muted-foreground font-normal mt-0.5">{lab.secondary}</div>
                       </th>
@@ -303,8 +304,9 @@ export default async function CompetenciaPage() {
                   </tr>
                 ))}
                 <tr className="bg-muted/30 font-medium">
-                  <td className="px-4 py-3 sticky left-0 bg-muted/30 z-10">
-                    <div className="text-sm text-foreground">Media mercado</div>
+                  <td className="px-4 py-3 sticky left-0 bg-muted/30 z-10"
+                    title="Promedio de precio por noche entre los competidores con disponibilidad en esa ventana. Excluye sold out. Si una ventana tiene menos de 2 hoteles disponibles, no se usa esta media para colorear las celdas (no es representativa).">
+                    <div className="text-sm text-foreground">Media mercado <span className="text-[10px] text-muted-foreground font-normal ml-1">ⓘ</span></div>
                   </td>
                   {ventanas.map((check_in) => {
                     const est = estadisticosPorVentana.get(check_in);
@@ -322,6 +324,71 @@ export default async function CompetenciaPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Diagnóstico Sold out */}
+          {(() => {
+            type Diag = { competidor: any; total: number; soldout: number; sinDato: number; pct: number };
+            const diag: Diag[] = competidores.filter((c: any) => !c.es_propia).map((c: any) => {
+              let total = 0, soldout = 0, sinDato = 0;
+              ventanas.forEach((cin) => {
+                const snap = ultimosPorVentana.get(`${c.id}|${cin}`);
+                if (!snap) { sinDato++; return; }
+                total++;
+                if (!snap.disponible || !snap.precio_por_noche || Number(snap.precio_por_noche) <= 0) soldout++;
+              });
+              const pct = total > 0 ? Math.round((soldout / total) * 100) : 0;
+              return { competidor: c, total, soldout, sinDato, pct };
+            });
+            const problemas = diag.filter(d => d.pct >= 50 || d.sinDato > ventanas.length / 2);
+            if (problemas.length === 0) return null;
+            return (
+              <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <div className="text-amber-700 dark:text-amber-400 text-lg leading-none">⚠</div>
+                  <div className="flex-1 text-xs">
+                    <div className="text-sm font-semibold text-foreground mb-1">Diagnóstico: posibles problemas de captura</div>
+                    <div className="text-muted-foreground mb-2 leading-relaxed">
+                      Estos hoteles aparecen mayoritariamente como <strong>"Sold out"</strong> o sin dato en todas las ventanas. Puede deberse a tres causas:
+                    </div>
+                    <ul className="list-disc pl-5 mb-3 text-muted-foreground space-y-0.5">
+                      <li>La URL de Booking que tenemos guardada no corresponde a su ficha real (errata, redirección, hotel cerrado o de temporada).</li>
+                      <li>Bloquean al scraper o exigen ocupación mínima que no coincide con nuestras ventanas (ej. solo grupos, solo 7 noches mínimo).</li>
+                      <li>Realmente están sin disponibilidad para esas fechas (cierre temporada, evento privado, vendido).</li>
+                    </ul>
+                    <table className="w-full text-xs">
+                      <thead className="text-muted-foreground">
+                        <tr>
+                          <th className="text-left font-medium pb-1">Hotel</th>
+                          <th className="text-right font-medium pb-1">Sold out / total</th>
+                          <th className="text-right font-medium pb-1">Sin captura</th>
+                          <th className="text-left font-medium pb-1 pl-3">URL Booking</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {problemas.map((d) => (
+                          <tr key={d.competidor.id} className="border-t border-amber-200/60 dark:border-amber-900/60">
+                            <td className="py-1.5 pr-2 font-medium text-foreground">{d.competidor.nombre}</td>
+                            <td className="py-1.5 pr-2 text-right">{d.soldout} / {d.total} <span className="text-muted-foreground">({d.pct}%)</span></td>
+                            <td className="py-1.5 pr-2 text-right text-muted-foreground">{d.sinDato} ventanas</td>
+                            <td className="py-1.5 pl-3 text-muted-foreground">
+                              {d.competidor.booking_url ? (
+                                <Link href={d.competidor.booking_url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground inline-flex items-center gap-1 underline">
+                                  abrir <ExternalLink className="size-3" />
+                                </Link>
+                              ) : <span className="italic">sin URL</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="mt-3 text-[11px] text-muted-foreground italic">
+                      Recomendación: abrir cada URL, comprobar si la ficha es la del hotel correcto y si efectivamente está cerrado para esas fechas. Si la URL está mal, actualizarla en Configuración → Competidores (próxima sesión).
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
         </div>
       )}
