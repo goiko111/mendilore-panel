@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState, StatCard } from "@/components/page-header";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 import { MetricasChart } from "./chart";
+import { KPITooltip } from "@/components/kpi-tooltip";
 
 export const metadata = { title: "Métricas" };
 
@@ -476,17 +477,17 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         </p>
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg border border-border p-3 text-center">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Próximos 30 d</div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 30 d<KPITooltip mide="Reservas confirmadas con check-in en los próximos 30 días." calculo="COUNT(reservas) WHERE fecha_in BETWEEN hoy Y hoy+30d AND estado_reserva != cancelada" origen="MisterPlan" sistemas="MrPlan → robot → BD del panel · pipeline cercano" /></div>
             <div className="text-2xl font-semibold text-foreground mt-1">{pace30}</div>
             <div className="text-xs text-muted-foreground mt-0.5">reservas</div>
           </div>
           <div className="rounded-lg border border-border p-3 text-center">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Próximos 60 d</div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 60 d<KPITooltip mide="Reservas confirmadas con check-in en los próximos 60 días." calculo="COUNT(reservas) WHERE fecha_in BETWEEN hoy Y hoy+60d AND estado_reserva != cancelada" origen="MisterPlan" sistemas="MrPlan → robot → BD del panel · pipeline a 2 meses vista" /></div>
             <div className="text-2xl font-semibold text-foreground mt-1">{pace60}</div>
             <div className="text-xs text-muted-foreground mt-0.5">reservas</div>
           </div>
           <div className="rounded-lg border border-border p-3 text-center">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Próximos 90 d</div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 90 d<KPITooltip mide="Reservas confirmadas con check-in en los próximos 90 días." calculo="COUNT(reservas) WHERE fecha_in BETWEEN hoy Y hoy+90d AND estado_reserva != cancelada" origen="MisterPlan" sistemas="MrPlan → robot → BD del panel · pipeline trimestral total" /></div>
             <div className="text-2xl font-semibold text-foreground mt-1">{pace90}</div>
             <div className="text-xs text-muted-foreground mt-0.5">reservas</div>
           </div>
@@ -496,7 +497,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       {/* Channel mix */}
       {channelMix.length > 0 && totalChannelRevenue > 0 && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
-          <h2 className="text-base font-semibold text-foreground mb-1">Reparto por canal — últimos 30 días</h2>
+          <h2 className="text-base font-semibold text-foreground mb-1 flex items-center">Reparto por canal — últimos 30 días<KPITooltip mide="Distribución de los ingresos por canal de venta (Booking, web propia, teléfono, walk-in, etc.) en los últimos 30 días." calculo="SUM(importe_total) agrupado por canal sobre reservas con check-in en últimos 30d, excluyendo canceladas." origen="MisterPlan — el campo canal de cada reserva" sistemas="MrPlan → robot → BD del panel · indica de dónde viene el dinero" /></h2>
           <p className="text-xs text-muted-foreground mb-4">
             Distribución de ingresos por canal · {formatCurrency(totalChannelRevenue)} · {(canalRows ?? []).length} reservas
           </p>
@@ -637,19 +638,19 @@ async function VisitasWebGA4() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Sesiones</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Sesiones<KPITooltip mide="Número de sesiones (visitas) a mendilore.com en los últimos 28 días." calculo="Google Analytics 4 — sessions metric, dimensión por fecha" origen="GA4 — propiedad de mendilore.com, autenticación OAuth con tu cuenta de Google" sistemas="GA4 Data API → OAuth user-delegated → panel server-side" /></div>
           <div className="text-2xl font-semibold text-foreground mt-1">{data.sesiones.toLocaleString("es-ES")}</div>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Usuarios</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Usuarios<KPITooltip mide="Usuarios únicos que han entrado en mendilore.com en los últimos 28 días." calculo="GA4 — totalUsers metric" origen="GA4 (mendilore.com)" sistemas="GA4 Data API server-side. Cookies necesarias para identificar al mismo usuario en varias visitas." /></div>
           <div className="text-2xl font-semibold text-foreground mt-1">{data.usuarios.toLocaleString("es-ES")}</div>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Páginas vistas</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Páginas vistas<KPITooltip mide="Páginas vistas totales en mendilore.com en los últimos 28 días." calculo="GA4 — screenPageViews metric" origen="GA4 (mendilore.com)" sistemas="GA4 Data API server-side · útil para ver si crece el interés en una página concreta" /></div>
           <div className="text-2xl font-semibold text-foreground mt-1">{data.pageviews.toLocaleString("es-ES")}</div>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Duración media</div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Duración media<KPITooltip mide="Tiempo medio que dura una sesión en mendilore.com (segundos)." calculo="GA4 — averageSessionDuration metric" origen="GA4 (mendilore.com)" sistemas="GA4 Data API server-side · más tiempo = más interés / mejor contenido" /></div>
           <div className="text-2xl font-semibold text-foreground mt-1">{Math.round(data.duracionMedia)}s</div>
         </div>
       </div>
