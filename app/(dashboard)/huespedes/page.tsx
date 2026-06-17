@@ -214,13 +214,13 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="text-left font-medium px-5 py-2.5">Huésped</th>
-                <th className="text-left font-medium px-5 py-2.5">Contacto</th>
-                <th className="text-left font-medium px-5 py-2.5">País</th>
-                <th className="text-right font-medium px-5 py-2.5">Reservas</th>
-                <th className="text-right font-medium px-5 py-2.5">Noches</th>
-                <th className="text-right font-medium px-5 py-2.5">Gasto total</th>
-                <th className="text-left font-medium px-5 py-2.5">Última estancia</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Nombre y apellidos del huésped tal como llegan desde MisterPlan.">Huésped</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Email y/o teléfono de contacto. Los emails proxy de Booking (@guest.booking.com) son válidos pero solo durante la reserva.">Contacto</th>
+                <th className="text-left font-medium px-5 py-2.5" title="País de origen del huésped. Inferido por país explícito, prefijo telefónico, TLD de email o nombre típico.">País</th>
+                <th className="text-right font-medium px-5 py-2.5" title="Número total de reservas (no canceladas) que ha tenido este huésped.">Reservas</th>
+                <th className="text-right font-medium px-5 py-2.5" title="Total de noches reservadas por este huésped en todas sus estancias.">Noches</th>
+                <th className="text-right font-medium px-5 py-2.5" title="Suma de importes totales pagados/cobrados por este huésped en todas sus estancias.">Gasto total</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Fecha de entrada de la reserva más reciente. Útil para ordenar por actividad.">Última estancia</th>
                 <th className="w-8"></th>
               </tr>
             </thead>
