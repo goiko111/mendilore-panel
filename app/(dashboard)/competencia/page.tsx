@@ -325,6 +325,111 @@ export default async function CompetenciaPage() {
             </table>
           </div>
 
+          {/* Gráfico evolución 60d — Bloque 10 final */}
+          {(() => {
+            // Para cada ventana, agregar precio MEDIO del mercado por día de snapshot
+            const proximasVentanas = ventanas
+              .filter((v) => v >= new Date().toISOString().slice(0, 10))
+              .slice(0, 3);
+            if (proximasVentanas.length === 0) return null;
+            // fecha_snapshot -> ventana -> precios[]
+            const matriz = new Map<string, Map<string, number[]>>();
+            snapshots.forEach((sn: any) => {
+              if (!sn.fecha_snapshot || !sn.check_in || !sn.disponible) return;
+              if (!proximasVentanas.includes(sn.check_in)) return;
+              const pn = Number(sn.precio_por_noche);
+              if (!pn || pn <= 0) return;
+              if (!matriz.has(sn.fecha_snapshot)) matriz.set(sn.fecha_snapshot, new Map());
+              const m = matriz.get(sn.fecha_snapshot)!;
+              if (!m.has(sn.check_in)) m.set(sn.check_in, []);
+              m.get(sn.check_in)!.push(pn);
+            });
+            const fechas = Array.from(matriz.keys()).sort();
+            if (fechas.length < 2) return null;
+            // Series: por ventana, array de {fecha, media}
+            type Punto = { fecha: string; media: number };
+            const series: { ventana: string; label: string; color: string; puntos: Punto[] }[] = proximasVentanas.map((v, i) => {
+              const color = ["#0f766e", "#0369a1", "#a16207"][i];
+              const lab = ventanaLabel(v);
+              const puntos: Punto[] = fechas
+                .map((fe) => {
+                  const ms = matriz.get(fe);
+                  const arr = ms?.get(v);
+                  if (!arr || arr.length === 0) return null;
+                  const media = arr.reduce((a, b) => a + b, 0) / arr.length;
+                  return { fecha: fe, media };
+                })
+                .filter((p): p is Punto => p !== null);
+              return { ventana: v, label: `${lab.primary} · ${lab.secondary}`, color, puntos };
+            }).filter(s => s.puntos.length >= 2);
+
+            if (series.length === 0) return null;
+
+            // Calcular bounds Y
+            const todosLosValores = series.flatMap(s => s.puntos.map(p => p.media));
+            const yMin = Math.floor(Math.min(...todosLosValores) * 0.95);
+            const yMax = Math.ceil(Math.max(...todosLosValores) * 1.05);
+            const xMin = new Date(fechas[0]).getTime();
+            const xMax = new Date(fechas[fechas.length - 1]).getTime();
+            const W = 720, H = 220, PAD_L = 50, PAD_R = 12, PAD_T = 16, PAD_B = 28;
+            const sx = (t: number) => PAD_L + ((t - xMin) / Math.max(1, xMax - xMin)) * (W - PAD_L - PAD_R);
+            const sy = (v: number) => PAD_T + (1 - (v - yMin) / Math.max(1, yMax - yMin)) * (H - PAD_T - PAD_B);
+
+            // Eje Y: 4 ticks
+            const yTicks = [yMin, yMin + (yMax - yMin) * 0.33, yMin + (yMax - yMin) * 0.66, yMax].map(v => Math.round(v));
+
+            return (
+              <div className="bg-card border border-border rounded-xl p-5">
+                <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+                  <h2 className="text-base font-semibold text-foreground">Evolución precio medio mercado · últimos {fechas.length} días</h2>
+                  <span className="text-[11px] text-muted-foreground">3 ventanas más cercanas</span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Cada línea es la media de los competidores disponibles para una ventana de entrada concreta. Si una línea sube, el mercado está pidiendo más; si baja, hay presión para abaratar.
+                </p>
+                <div className="overflow-x-auto">
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[640px] h-auto">
+                    {/* Grid Y */}
+                    {yTicks.map((v, i) => (
+                      <g key={i}>
+                        <line x1={PAD_L} x2={W - PAD_R} y1={sy(v)} y2={sy(v)} stroke="currentColor" strokeOpacity="0.08" />
+                        <text x={PAD_L - 6} y={sy(v) + 3} fontSize="10" textAnchor="end" fill="currentColor" fillOpacity="0.55">{v}€</text>
+                      </g>
+                    ))}
+                    {/* Eje X: primer y último */}
+                    <text x={PAD_L} y={H - 8} fontSize="10" fill="currentColor" fillOpacity="0.55">{fechas[0]}</text>
+                    <text x={W - PAD_R} y={H - 8} fontSize="10" textAnchor="end" fill="currentColor" fillOpacity="0.55">{fechas[fechas.length - 1]}</text>
+                    {/* Series */}
+                    {series.map((s, si) => {
+                      const path = s.puntos
+                        .map((p, i) => `${i === 0 ? "M" : "L"} ${sx(new Date(p.fecha).getTime())} ${sy(p.media)}`)
+                        .join(" ");
+                      return (
+                        <g key={si}>
+                          <path d={path} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          {s.puntos.map((p, i) => (
+                            <circle key={i} cx={sx(new Date(p.fecha).getTime())} cy={sy(p.media)} r="2.5" fill={s.color}>
+                              <title>{`${p.fecha}: ${p.media.toFixed(0)}€/n (${s.label})`}</title>
+                            </circle>
+                          ))}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+                {/* Leyenda */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-xs">
+                  {series.map((s, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }}></span>
+                      <span className="text-foreground capitalize">{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Diagnóstico Sold out */}
           {(() => {
             type Diag = { competidor: any; total: number; soldout: number; sinDato: number; pct: number };
