@@ -204,16 +204,16 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-muted-foreground">
               <tr>
-                <th className="text-left font-medium px-5 py-2.5">Huésped</th>
-                <th className="text-left font-medium px-5 py-2.5">Habitación</th>
-                <th className="text-left font-medium px-5 py-2.5">Entrada</th>
-                <th className="text-left font-medium px-5 py-2.5">Salida</th>
-                <th className="text-right font-medium px-5 py-2.5">Noches</th>
-                <th className="text-right font-medium px-5 py-2.5">Importe</th>
-                <th className="text-left font-medium px-5 py-2.5">Reserva</th>
-                <th className="text-left font-medium px-5 py-2.5">Cobro</th>
-                <th className="text-left font-medium px-5 py-2.5">Canal</th>
-                <th className="text-left font-medium px-5 py-2.5">Firma legal</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Persona titular de la reserva (nombre completo). Datos sincronizados desde MisterPlan.">Huésped</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Una de las 6 habitaciones: Cala, Nube, Margarita, Lino, Limonero o Lavanda.">Habitación</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Fecha de check-in del huésped (formato día/mes/año).">Entrada</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Fecha de check-out del huésped.">Salida</th>
+                <th className="text-right font-medium px-5 py-2.5" title="Número de noches reservadas (fecha_out - fecha_in).">Noches</th>
+                <th className="text-right font-medium px-5 py-2.5" title="Importe total de la reserva en euros (alojamiento + complementarios). Origen: MisterPlan.">Importe</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Estado de la reserva: confirmada, completada, cancelada, no_show o pendiente. Origen: MisterPlan.">Reserva</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Estado del cobro: cobrado, pendiente, fallido, reembolsado o no_aplica. Origen: MisterPlan.">Cobro</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Canal de venta: directo, booking, airbnb, expedia, web_propia, walk_in u otro.">Canal</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Estado de la aceptación de condiciones particulares por el huésped (política de cancelación, mascotas, etc.). Verde si firmada, rojo/naranja según urgencia si pendiente.">Firma legal</th>
                 <th className="text-left font-medium px-5 py-2.5">Acciones</th>
               </tr>
             </thead>
