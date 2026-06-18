@@ -45,6 +45,8 @@ type ReservaPayload = {
   huesped_pais: string | null;
   huesped_documento: string | null;
   importe_total: number;
+  importe_alojamiento?: number | null;
+  importe_complementarios?: number;
   importe_moneda: string;
   anticipo: number;
   pendiente_cobro: number;
