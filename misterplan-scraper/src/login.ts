@@ -62,6 +62,27 @@ export async function isLoggedIn(page: Page): Promise<boolean> {
   }
 }
 
+/**
+ * MisterPlan TCloudV2 muestra "loading" como placeholder mientras carga el
+ * dashboard real vía AJAX. Si lo vemos como cuerpo, esperamos a que termine.
+ * Devuelve true cuando la página ya tiene contenido REAL (no solo "loading").
+ */
+export async function waitForPostLoginRender(page: Page, timeoutMs = 30000): Promise<boolean> {
+  try {
+    await page.waitForFunction(
+      () => {
+        const t = document.body.innerText.trim().toLowerCase();
+        // Considerar listo si el body NO es solo "loading" Y tiene cierto contenido
+        return t.length > 30 && !/^loading\s*\.*$/i.test(t);
+      },
+      { timeout: timeoutMs, polling: 500 }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function needsActivation(page: Page): Promise<boolean> {
   try {
     const txt = await page.evaluate(() => document.body.innerText);
@@ -152,6 +173,14 @@ export async function performLogin(
   const postTitle = await page.title();
   log.info(`Post-submit · url=${postUrl} · title=${postTitle}`);
 
+  // Esperar a que la página post-login renderice contenido real (no "loading")
+  // MisterPlan TCloudV2 carga el dashboard vía AJAX tras la navegación inicial.
+  const renderedOk = await waitForPostLoginRender(page, 30000);
+  log.info(`Post-login render wait: ${renderedOk ? 'OK' : 'TIMEOUT'}`);
+  if (renderedOk) {
+    await dumpDebug(page, 'login-04b-post-render');
+  }
+
   // Comprobaciones
   if (await needsActivation(page)) {
     log.warning('Device activation required — manual step needed');
@@ -195,6 +224,8 @@ export async function ensureLoggedIn(
 
   // Probar primero la HOME — si ya hay sesión válida, evitamos login
   await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30000 });
+  // Esperar a que el dashboard renderice (igual que en performLogin)
+  await waitForPostLoginRender(page, 20000);
 
   if (await isLoggedIn(page)) {
     log.info('Session restored from cookies — login skipped');
