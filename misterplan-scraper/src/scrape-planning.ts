@@ -124,18 +124,66 @@ async function clickNextMonth(frame: Frame): Promise<boolean> {
 }
 
 async function clickPrevMonth(frame: Frame): Promise<boolean> {
+  // Lista exhaustiva de selectores comunes en calendars/datepickers
   const candidates = [
-    'button[title*="anterior"], button[aria-label*="anterior"]',
+    'button[title*="anterior" i], button[aria-label*="anterior" i]',
+    'button[title*="previous" i], button[aria-label*="previous" i]',
+    'button[title*="prev" i], button[aria-label*="prev" i]',
     '.fc-prev-button',
-    '.btn-prev-month',
-    'a.prev',
+    '.btn-prev-month, .btn-prev',
+    'a.prev, a[data-action="prev"], a[data-direction="prev"]',
+    '[data-action="prev-month"], [data-action="prevMonth"]',
+    'button.flecha-izq, .arrow-left, .icon-arrow-left',
+    'i.fa-chevron-left, i.fa-arrow-left, i.fa-angle-left',
+    'span.flecha-anterior',
+    '#prev, #prev-month, #btnAnterior, #btn-anterior',
   ];
   for (const sel of candidates) {
     try {
-      await frame.click(sel, { delay: 50 });
-      return true;
+      const el = await frame.$(sel);
+      if (el) {
+        await el.click({ delay: 50 });
+        return true;
+      }
     } catch { /* try next */ }
   }
+  // Fallback: buscar por texto del botón (← < anterior previa ant)
+  try {
+    const result = await frame.evaluate(() => {
+      const cands = Array.from(document.querySelectorAll('button, a, span, div')) as HTMLElement[];
+      const candidate = cands.find((el) => {
+        const t = (el.textContent || '').trim().toLowerCase();
+        const cl = (el.className || '').toString().toLowerCase();
+        const id = (el.id || '').toLowerCase();
+        // Símbolos clave del botón anterior
+        if (t === '<' || t === '‹' || t === '←' || t === '«' || t === '<<') return true;
+        if (/^(anterior|previa|prev|atrás|atras)\b/i.test(t)) return true;
+        if (/prev|anterior|atras|left|izq/.test(cl + ' ' + id) && (el as HTMLElement).offsetParent !== null) return true;
+        return false;
+      });
+      if (candidate) {
+        // Si es un icono dentro de un botón, clickear el padre
+        const target = candidate.tagName === 'I' || candidate.tagName === 'SPAN' ? candidate.closest('button, a') as HTMLElement || candidate : candidate;
+        target.click();
+        return { ok: true, tag: target.tagName, text: target.textContent?.slice(0, 30), cls: target.className?.slice(0, 60) };
+      }
+      return { ok: false };
+    });
+    if (result.ok) {
+      log.info(`Prev month clicked via text/class search: ${JSON.stringify(result)}`);
+      return true;
+    }
+  } catch (e: any) {
+    log.warning(`Prev month text search failed: ${e.message}`);
+  }
+  // Último fallback: dump del HTML para diagnóstico
+  try {
+    const html = await frame.evaluate(() => document.documentElement.outerHTML.slice(0, 50000));
+    const KeyValueStore = (await import('crawlee')).KeyValueStore;
+    const store = await KeyValueStore.open('debug-screenshots');
+    await store.setValue(`planning-html-${Date.now()}.html`, html, { contentType: 'text/html' });
+    log.info('Planning HTML dumped to debug-screenshots for selector inspection');
+  } catch {}
   return false;
 }
 
