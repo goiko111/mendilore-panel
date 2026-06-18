@@ -69,6 +69,23 @@ export default async function AceptarPage({ params }: Params) {
           </dl>
         </div>
 
+        {/* Bloque explicativo: por qué necesitamos esto */}
+        <div className="bg-stone-100 dark:bg-stone-900/60 border border-stone-200 dark:border-stone-800 rounded-xl p-5 mb-6 text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
+          <div className="font-semibold text-stone-900 dark:text-stone-100 text-sm mb-2 flex items-center gap-1.5">
+            <span>¿Por qué te pedimos esto?</span>
+            <span className="text-[10px] uppercase tracking-wider bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 px-1.5 py-0.5 rounded font-bold">RGPD</span>
+          </div>
+          <p className="mb-2">
+            Antes de tu llegada, la ley nos pide guardar una <strong>prueba clara</strong> de que has leído y aceptado las condiciones particulares de Casa Mendilore: política de cancelación, normas de convivencia y política de mascotas si vienes con alguna.
+          </p>
+          <p className="mb-2">
+            Al pulsar <strong>"Aceptar"</strong> guardamos: tu nombre, la fecha y hora exacta, tu dirección IP y una huella digital (SHA-256) del documento que firmaste. Esto nos sirve para demostrar — solo si hiciera falta — qué versión exacta aceptaste y cuándo. No usamos estos datos para marketing.
+          </p>
+          <p>
+            La aceptación se conserva durante <strong>6 años</strong> (plazo mercantil) y luego se elimina. Puedes ejercer tus derechos RGPD escribiendo a <a href="mailto:mendilore@mendilore.com" className="underline text-emerald-700 dark:text-emerald-400">mendilore@mendilore.com</a>. Más info en la <a href="https://mendilore.com/aviso-legal" target="_blank" rel="noopener" className="underline text-emerald-700 dark:text-emerald-400">política de privacidad</a>.
+          </p>
+        </div>
+
         {todosAceptados ? (
           <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-xl p-5 text-sm text-emerald-900 dark:text-emerald-100">
             <div className="font-semibold mb-1">Condiciones aceptadas</div>
