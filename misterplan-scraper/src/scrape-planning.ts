@@ -212,15 +212,39 @@ async function getReservaHandles(frame: Frame) {
  * Devuelve true si el modal está visible, false si algo falló.
  */
 async function openReservaModal(frame: Frame, idx: number, debug = false): Promise<boolean> {
+  // Re-fetch handles cada vez para evitar handles obsoletos tras mutaciones del DOM
   const handles = await getReservaHandles(frame);
   if (idx >= handles.length) return false;
+  const handle = handles[idx];
 
   try {
-    // Estrategia 1: doble-click (MrPlan TCloudV2 abre el detalle con double-click)
+    // Scroll el handle a la vista para asegurar que es clickable
     try {
-      await handles[idx].click({ clickCount: 2, delay: 30 });
-      await new Promise((r) => setTimeout(r, 600));
-    } catch { /* try next */ }
+      await handle.evaluate((el: any) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      await new Promise((r) => setTimeout(r, 200));
+    } catch { /* ignore */ }
+
+    // Estrategia 1: doble-click + retry (MrPlan TCloudV2 abre con double-click)
+    // Hasta 2 reintentos si el primer click no produce el modal
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await handle.click({ clickCount: 2, delay: 50 });
+        await new Promise((r) => setTimeout(r, 600));
+      } catch { /* try next */ }
+
+      // Comprobación rápida: ¿hay modal visible ya?
+      const modalVisible = await frame.evaluate(() => {
+        const sels = ['.modal.show', '.modal.in', '.modal[style*="display: block"]', '[role="dialog"][aria-modal="true"]'];
+        return sels.some(s => {
+          const el = document.querySelector(s) as HTMLElement | null;
+          return el && (el.offsetParent !== null);
+        });
+      }).catch(() => false);
+      if (modalVisible) break;
+
+      // Si no hay modal aún, esperar 400ms más antes de reintento
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+    }
 
     // Esperar modal de Bootstrap/MrPlan
     const modalSelectors = [
