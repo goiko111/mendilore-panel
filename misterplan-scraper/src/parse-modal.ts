@@ -130,6 +130,25 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
   const importeMatch = modalText.match(/Importe de la reserva\s+([\d.,]+)\s*€/i);
   const importe_total = importeMatch ? parseImporte(importeMatch[1]) : 0;
 
+  // Desglose alojamiento / complementarios (migration 0016)
+  // MisterPlan TCloudV2 usa estas etiquetas variables:
+  //   "Habitación", "Alojamiento", "Hospedaje" → alojamiento
+  //   "Complementos", "Extras", "Servicios" → complementarios
+  let importe_alojamiento: number | null = null;
+  let importe_complementarios = 0;
+  const alojaMatch = modalText.match(/(?:Alojamiento|Hospedaje|Habitaci[oó]n)\s+([\d.,]+)\s*€/i);
+  if (alojaMatch) importe_alojamiento = parseImporte(alojaMatch[1]);
+  const extrasMatch = modalText.match(/(?:Complementos|Extras|Servicios|Suplementos)\s+([\d.,]+)\s*€/i);
+  if (extrasMatch) importe_complementarios = parseImporte(extrasMatch[1]);
+  // Si solo encontramos uno, derivar el otro
+  if (importe_alojamiento === null && importe_complementarios > 0 && importe_total > 0) {
+    importe_alojamiento = Math.max(0, importe_total - importe_complementarios);
+  }
+  // Si no encontramos nada, alojamiento = total (comportamiento previo migration 0016)
+  if (importe_alojamiento === null) {
+    importe_alojamiento = importe_total;
+  }
+
   const pendienteMatch = modalText.match(/Pendiente de cobro\s+([\d.,]+)\s*€/i);
   const pendiente_cobro = pendienteMatch ? parseImporte(pendienteMatch[1]) : 0;
 
@@ -192,6 +211,8 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     huesped_pais: null,
     huesped_documento: null,
     importe_total,
+    importe_alojamiento,
+    importe_complementarios,
     importe_moneda: 'EUR',
     anticipo,
     pendiente_cobro,
