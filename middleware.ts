@@ -9,13 +9,14 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico
-     * - api/webhook (these have own auth via secret header)
-     * - api/oauth/google (public OAuth endpoints — Google redirects here without auth)
-     * - images, .svg, .png, .jpg, .jpeg, .gif, .webp
+     * - _next/static, _next/image, favicon
+     * - api/webhook (own auth via secret header)
+     * - api/oauth/google (public OAuth callback)
+     * - api/admin (own auth via x-admin-secret header)
+     * - api/cron (own auth via x-cron-secret header)
+     * - api/aceptar-condiciones (public form)
+     * - images
      */
-    "/((?!_next/static|_next/image|favicon.ico|api/webhook|api/oauth/google|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+    "/((?!_next/static|_next/image|favicon.ico|api/webhook|api/oauth/google|api/admin|api/cron|api/aceptar-condiciones|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
   ]
 };
