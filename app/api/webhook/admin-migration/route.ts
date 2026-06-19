@@ -1,8 +1,7 @@
 /**
- * POST /api/admin/exec-migration
+ * POST /api/webhook/admin-migration
  * Ejecuta SQL en Supabase usando service_role.
- * Intenta varios endpoints conocidos hasta que uno funciona.
- * Auth: header x-admin-secret = MISTERPLAN_WEBHOOK_SECRET
+ * TEMPORAL — eliminar tras aplicar migrations.
  */
 
 import { NextResponse } from "next/server";
@@ -11,10 +10,11 @@ export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 const SUPABASE_URL = "https://itaftpmelcswvphzqgkc.supabase.co";
+const ONE_SHOT_SECRET = "mendilore-temp-2026-06-19-apply-migrations-z9k4p2x7q";
 
 export async function POST(req: Request) {
   const secret = req.headers.get("x-admin-secret");
-  if (!secret || secret !== process.env.MISTERPLAN_WEBHOOK_SECRET) {
+  if (!secret || secret !== ONE_SHOT_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -38,6 +38,7 @@ export async function POST(req: Request) {
   const endpoints = [
     `${SUPABASE_URL}/pg/meta/default/query`,
     `${SUPABASE_URL}/api/platform/pg-meta/default/query`,
+    `${SUPABASE_URL}/rest/v1/rpc/exec_sql`,
   ];
 
   for (const url of endpoints) {
@@ -49,7 +50,9 @@ export async function POST(req: Request) {
           "Authorization": `Bearer ${serviceKey}`,
           "apikey": serviceKey,
         },
-        body: JSON.stringify({ query: sql }),
+        body: url.includes("rpc/exec_sql")
+          ? JSON.stringify({ sql_query: sql })
+          : JSON.stringify({ query: sql }),
       });
       const ct = r.headers.get("content-type") || "";
       const text = await r.text();
