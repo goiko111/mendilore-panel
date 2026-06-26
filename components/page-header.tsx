@@ -1,3 +1,5 @@
+import { KPITooltip } from "./kpi-tooltip";
+
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 mb-8">
@@ -9,8 +11,6 @@ export function PageHeader({ title, description, actions }: { title: string; des
     </div>
   );
 }
-
-import { KPITooltip } from "./kpi-tooltip";
 
 export function StatCard({ label, value, hint, trend, tooltip }: { label: string; value: string; hint?: string; trend?: "up" | "down" | "flat"; tooltip?: { mide: string; calculo: string; origen: string; sistemas: string } }) {
   return (
