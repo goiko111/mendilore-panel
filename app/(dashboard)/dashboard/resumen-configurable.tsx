@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Settings2, Eye, EyeOff } from "lucide-react";
+import { KPITooltip } from "@/components/kpi-tooltip";
 
 type KPIKey =
   | "checkins_hoy" | "checkouts_hoy" | "huespedes_presentes" | "llegadas_manana"
