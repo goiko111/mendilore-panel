@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { AccionesReserva } from "./acciones-reserva";
+import { HABITACIONES_VALIDAS } from "@/lib/constants";
 
 export const metadata = { title: "Reservas" };
 
@@ -42,6 +43,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
     .from("reservas")
     .select("id, habitacion, fecha_in, fecha_out, noches, importe_total, importe_moneda, estado_reserva, estado_cobro, canal, huespedes(nombre, apellidos, email)")
     .order("fecha_in", { ascending })
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
     .limit(1000);
 
   if (tiempo === "futuras") query = query.gte("fecha_in", today);
