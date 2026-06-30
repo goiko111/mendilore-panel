@@ -224,32 +224,15 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
       await new Promise((r) => setTimeout(r, 200));
     } catch { /* ignore */ }
 
-    // Estrategia 1: dispatchEvent('dblclick') vía JS (más fiable que puppeteer mouse click
-    //   para meses pasados, donde el handler está registrado via jQuery .on('dblclick')).
-    // Estrategia 2 (fallback): mouse double-click de puppeteer.
-    // Estrategia 3 (fallback): jQuery $(el).trigger('dblclick') si jQuery presente.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Estrategia 1: doble-click + retry (MrPlan TCloudV2 abre con double-click)
+    // Hasta 2 reintentos si el primer click no produce el modal
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        if (attempt === 0) {
-          // dispatchEvent nativo
-          await handle.evaluate((el: any) => {
-            const ev = new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window, button: 0 });
-            el.dispatchEvent(ev);
-          });
-        } else if (attempt === 1) {
-          // mouse click x2 puppeteer
-          await handle.click({ clickCount: 2, delay: 60 });
-        } else {
-          // jQuery trigger si está disponible
-          await handle.evaluate((el: any) => {
-            const w: any = window;
-            if (w.jQuery) w.jQuery(el).trigger('dblclick');
-            else el.click(); // último recurso
-          });
-        }
+        await handle.click({ clickCount: 2, delay: 50 });
         await new Promise((r) => setTimeout(r, 600));
       } catch { /* try next */ }
 
+      // Comprobación rápida: ¿hay modal visible ya?
       const modalVisible = await frame.evaluate(() => {
         const sels = ['.modal.show', '.modal.in', '.modal[style*="display: block"]', '[role="dialog"][aria-modal="true"]'];
         return sels.some(s => {
@@ -258,7 +241,9 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
         });
       }).catch(() => false);
       if (modalVisible) break;
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
+
+      // Si no hay modal aún, esperar 400ms más antes de reintento
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
     }
 
     // Esperar modal de Bootstrap/MrPlan
@@ -540,4 +525,5 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
