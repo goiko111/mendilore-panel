@@ -74,15 +74,22 @@ export default async function DashboardPage() {
     .order("fecha_in", { ascending: true });
   const cobros7dImporte = (cobros7d ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
 
-  // E2) Cobros pendientes <14d (legacy)
-  const { data: cobros14d } = await supabase
+  // E2) Cobros pendientes <14d — solo los que necesitan ACCIÓN nuestra
+  //     (excluye Booking Payments / OTA — esos los gestiona el portal)
+  const { data: cobros14dRaw } = await supabase
     .from("reservas")
-    .select("id, habitacion, fecha_in, importe_total, importe_moneda, huespedes(nombre, apellidos)", { count: "exact" })
+    .select("id, habitacion, fecha_in, importe_total, importe_moneda, canal, forma_pago, huespedes(nombre, apellidos)", { count: "exact" })
     .eq("estado_cobro", "pendiente")
-    .in("estado_reserva", ["confirmada", "completada"])
+    .in("estado_reserva", ["confirmada", "pendiente"])
     .gte("fecha_in", todayStr)
     .lte("fecha_in", in14Days)
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
     .order("fecha_in", { ascending: true });
+  const cobros14d = (cobros14dRaw ?? []).filter((r: any) => {
+    const fp = (r.forma_pago ?? "").toString().toLowerCase();
+    if (/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard|prepago.*ota|tarjeta.*virtual/i.test(fp)) return false;
+    return true;
+  });
 
   // L) Pipeline próximos 30d
   const { data: pipeline30d, count: cntPipeline30d } = await supabase
@@ -152,12 +159,24 @@ export default async function DashboardPage() {
     .gt("fecha_in", todayStr)
     .neq("estado_cobro", "cancelado");
 
-  // N) Cobros pendientes total
+  // N) Cobros pendientes total — solo reservas que requieren ACCIÓN
+  //    (excluye canceladas, no_show, reservas pasadas que MrPlan dejó como pendiente por error,
+  //     y reservas gestionadas por OTA con Booking Payments — forma_pago lo identifica)
   const { data: cobrosTotal } = await supabase
     .from("reservas")
-    .select("importe_total")
-    .eq("estado_cobro", "pendiente");
-  const cobrosTotalImporte = (cobrosTotal ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
+    .select("importe_total, forma_pago, canal, fecha_in")
+    .eq("estado_cobro", "pendiente")
+    .in("estado_reserva", ["confirmada", "pendiente"])
+    .gte("fecha_out", todayStr)  // descartar reservas YA finalizadas
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
+  // Filtrar también Booking Payments (gestión vía OTA, no nuestra)
+  const cobrosTotalFiltered = (cobrosTotal ?? []).filter((r: any) => {
+    const fp = (r.forma_pago ?? "").toString().toLowerCase();
+    // Marcas habituales de pago por OTA / vía OTA
+    if (/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard|prepago.*ota|tarjeta.*virtual/i.test(fp)) return false;
+    return true;
+  });
+  const cobrosTotalImporte = cobrosTotalFiltered.reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
 
   // V) Reservas nuevas hoy
   const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
@@ -170,15 +189,24 @@ export default async function DashboardPage() {
   // Por ahora paso solo los más útiles
 
   // Cobrado este mes + Tasa de cobro
+  //  Mide reservas con CHECK-IN en este mes, su estado de cobro y total.
+  //  Excluye canceladas y Alojamiento completo.
   const { data: reservasMes } = await supabase
     .from("reservas")
-    .select("estado_cobro, importe_total")
+    .select("estado_cobro, importe_total, forma_pago")
     .gte("fecha_in", startMonth)
     .lte("fecha_in", todayStr)
-    .neq("estado_reserva", "cancelada");
+    .neq("estado_reserva", "cancelada")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const cobradoMes = (reservasMes ?? []).filter((r: any) => r.estado_cobro === "cobrado").reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
   const totalReservasMes = (reservasMes ?? []).length;
-  const cobradasMes = (reservasMes ?? []).filter((r: any) => r.estado_cobro === "cobrado").length;
+  // Para la tasa de cobro: las pagadas por Booking Payments cuentan como cobradas
+  //  (ya están pagadas a Booking, MrPlan a veces marca pendiente igualmente)
+  const cobradasMes = (reservasMes ?? []).filter((r: any) => {
+    if (r.estado_cobro === "cobrado") return true;
+    const fp = (r.forma_pago ?? "").toString().toLowerCase();
+    return /booking[\s_-]*payments|virtual[\s_-]*card|virtualcard/i.test(fp);
+  }).length;
   const tasaCobro = totalReservasMes > 0 ? (cobradasMes / totalReservasMes) * 100 : null;
 
   const kpisData = {
