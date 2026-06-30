@@ -164,7 +164,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .from("reservas")
     .select("fecha_in, fecha_out, noches, created_at, estado_cobro")
     .gte("created_at", hace90d)
-    .neq("estado_cobro", "cancelado");
+    .neq("estado_cobro", "cancelado")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const leadTimes = (leadRows ?? [])
     .map((r) => {
       const ci = new Date(r.fecha_in as string).getTime();
