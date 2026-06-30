@@ -202,7 +202,7 @@ export default async function DashboardPage() {
 
   // Housekeeping (bloque 3 revisión Juan) — habitaciones ocupadas con sus contadores de cambio
   let hkRows: any[] = [];
-  let hkConfig = { cadencia_sabanas: 3, cadencia_toallas: 2 };
+  let hkConfig = { cadencia_sabanas: 4, cadencia_toallas: 2 };
   let hkReservaMap: Record<string, string> = {};
   try {
     const { data: hkData } = await supabase.rpc("calcular_housekeeping_pendiente");
