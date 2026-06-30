@@ -9,6 +9,7 @@ import { ResumenConfigurable } from "./resumen-configurable";
 import { HABITACIONES_VALIDAS } from "@/lib/constants";
 import { HousekeepingBlock } from "@/components/housekeeping-block";
 import { AlertasInlineBlock } from "@/components/alertas-inline-block";
+import { SyncStatusBanner } from "@/components/sync-status-banner";
 
 export const metadata = { title: "Resumen" };
 
@@ -266,6 +267,9 @@ export default async function DashboardPage() {
         title="Resumen"
         description={`Casa Mendilore · ${formatDate(todayStr, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`}
       />
+
+      <SyncStatusBanner />
+      <AlertasInlineBlock />
 
       <ResumenConfigurable data={kpisData as any} />
 
