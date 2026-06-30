@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { HABITACIONES_VALIDAS } from "@/lib/constants";
 
 type Alerta = {
   tipo: "cobro" | "sabanas" | "legal" | "competencia" | "scraper";
@@ -18,13 +19,20 @@ export async function GET() {
   const todayStr = today.toISOString().slice(0, 10);
   const in3 = new Date(today.getTime() + 3 * 86400_000).toISOString().slice(0, 10);
 
-  // 1) Cobros próximos a vencer (3 días)
-  const { count: cobrosUrg } = await supabase
+  // 1) Cobros próximos a vencer (3 días) — solo los que requieren ACCIÓN nuestra
+  const { data: cobrosUrgRaw } = await supabase
     .from("reservas")
-    .select("id", { count: "exact", head: true })
+    .select("id, forma_pago")
     .eq("estado_cobro", "pendiente")
+    .in("estado_reserva", ["confirmada", "pendiente"])
     .gte("fecha_in", todayStr)
-    .lte("fecha_in", in3);
+    .lte("fecha_in", in3)
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
+  // Excluir Booking Payments / pagos OTA (no requieren acción nuestra)
+  const cobrosUrg = (cobrosUrgRaw ?? []).filter((r: any) => {
+    const fp = (r.forma_pago ?? "").toString().toLowerCase();
+    return !/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard/i.test(fp);
+  }).length;
   if ((cobrosUrg ?? 0) > 0) {
     alertas.push({
       tipo: "cobro",
