@@ -1,7 +1,8 @@
 export const runtime = 'edge';
 import { NextResponse } from "next/server";
 
-const SECRET = "mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+// Secret en env var (APIFY_USAGE_SECRET). Fallback al hardcoded mientras se hace el rollover.
+const SECRET = process.env.APIFY_USAGE_SECRET || "mendilore-temp-2026-06-22-launch-hist-aBc9X3";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
