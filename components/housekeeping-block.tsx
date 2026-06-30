@@ -14,11 +14,11 @@ export type HousekeepingRow = {
 };
 
 type Config = {
-  cadencia_sabanas: number; // por defecto 3
+  cadencia_sabanas: number; // por defecto 4 (ajustado por Juan jun 2026)
   cadencia_toallas: number; // por defecto 2
 };
 
-const DEFAULT_CONFIG: Config = { cadencia_sabanas: 3, cadencia_toallas: 2 };
+const DEFAULT_CONFIG: Config = { cadencia_sabanas: 4, cadencia_toallas: 2 };
 
 export function HousekeepingBlock({ rows, config = DEFAULT_CONFIG, reservaIdByHabitacion = {} }: { rows: HousekeepingRow[]; config?: Config; reservaIdByHabitacion?: Record<string, string> }) {
   const [marcando, setMarcando] = useState<string | null>(null);
