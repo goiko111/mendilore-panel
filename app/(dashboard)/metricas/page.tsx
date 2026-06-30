@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState, StatCard } from "@/components/page-header";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 import { MetricasChart } from "./chart";
+import { HABITACIONES_VALIDAS } from "@/lib/constants";
 import { KPITooltip } from "@/components/kpi-tooltip";
 
 export const metadata = { title: "Métricas" };
