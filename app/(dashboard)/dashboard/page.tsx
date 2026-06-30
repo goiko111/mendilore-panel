@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ResumenConfigurable } from "./resumen-configurable";
+import { HABITACIONES_VALIDAS } from "@/lib/constants";
 import { HousekeepingBlock } from "@/components/housekeeping-block";
 import { AlertasInlineBlock } from "@/components/alertas-inline-block";
 
@@ -29,7 +30,8 @@ export default async function DashboardPage() {
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
     .gte("fecha_in", todayStr)
     .lt("fecha_in", tomorrow)
-    .neq("estado_cobro", "cancelado");
+    .neq("estado_cobro", "cancelado")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
 
   // B) Check-outs hoy
   const { data: checkoutsHoy, count: cntCheckoutsHoy } = await supabase
@@ -37,7 +39,8 @@ export default async function DashboardPage() {
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
     .gte("fecha_out", todayStr)
     .lt("fecha_out", tomorrow)
-    .neq("estado_cobro", "cancelado");
+    .neq("estado_cobro", "cancelado")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
 
   // C) Personas alojadas ahora (cuenta reservas activas y suma personas — fallback nº reservas si no hay dato)
   const { data: presentesData, count: cntReservasActivas } = await supabase
