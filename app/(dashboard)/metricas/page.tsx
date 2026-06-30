@@ -183,7 +183,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .from("reservas")
     .select("estado_cobro")
     .gte("fecha_in", inicioMes)
-    .lte("fecha_in", finMes);
+    .lte("fecha_in", finMes)
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const totalMes = (mesRows ?? []).length;
   const canceladasMes = (mesRows ?? []).filter((r) => r.estado_cobro === "cancelado").length;
   const cancelRate = totalMes > 0 ? (canceladasMes / totalMes) * 100 : 0;
@@ -194,7 +195,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .select("id, importe_total, fecha_in")
     .gte("fecha_in", todayStr)
     .lte("fecha_in", en90d)
-    .neq("estado_cobro", "cancelado");
+    .neq("estado_cobro", "cancelado")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const pace30 = (paceFuturasAll ?? []).filter(r => (r.fecha_in as string) <= en30d).length;
   const pace60 = (paceFuturasAll ?? []).filter(r => (r.fecha_in as string) <= en60d).length;
   const pace90 = (paceFuturasAll ?? []).length;
@@ -206,7 +208,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .select("id, importe_total, fecha_in")
     .gte("created_at", hace7d)
     .gte("fecha_in", todayStr)
-    .neq("estado_cobro", "cancelado");
+    .neq("estado_cobro", "cancelado")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const paceCount = (paceRows ?? []).length;
   const paceRevenue = (paceRows ?? []).reduce((sum, r) => sum + Number(r.importe_total ?? 0), 0);
 
@@ -216,7 +219,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .select("canal, importe_total")
     .gte("fecha_in", hace30d)
     .lte("fecha_in", todayStr)
-    .neq("estado_cobro", "cancelado");
+    .neq("estado_cobro", "cancelado")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const canalMap = new Map<string, { count: number; revenue: number }>();
   (canalRows ?? []).forEach((r) => {
     const k = (r.canal as string) || "Sin canal";
