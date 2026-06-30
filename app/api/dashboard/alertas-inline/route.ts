@@ -61,10 +61,10 @@ export async function GET() {
     }
   }
 
-  // 3) Housekeeping pendiente (3+ noches sin cambio de sábanas)
+  // 3) Housekeeping pendiente (4+ noches sin cambio de sábanas — ajustado por Juan)
   try {
     const { data: hk } = await supabase.rpc("calcular_housekeeping_pendiente");
-    const pendientesSabanas = (hk ?? []).filter((h: any) => (h.noches_desde_ultimo_cambio_sabanas ?? 0) >= 3);
+    const pendientesSabanas = (hk ?? []).filter((h: any) => (h.noches_desde_ultimo_cambio_sabanas ?? 0) >= 4);
     if (pendientesSabanas.length > 0) {
       alertas.push({
         tipo: "sabanas",
