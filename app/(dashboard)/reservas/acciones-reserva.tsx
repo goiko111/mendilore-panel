@@ -23,17 +23,18 @@ export function AccionesReserva({
 
   async function marcarCobrado() {
     if (estado_cobro === "cobrado") return;
-    // Bloqueo blando: si no hay firma, pedir confirmación con warning explícito
+    // Bloqueo DURO: NO se puede cobrar sin firma. Usuario debe enviar el enlace legal primero.
     if (!firmada) {
-      const ok = confirm(
-        "⚠ ATENCIÓN — Esta reserva no tiene aceptación de condiciones registrada.\n\n" +
-        "Si la marcas como cobrada sin firma:\n" +
-        "  · perderás la trazabilidad jurídica frente a una reclamación,\n" +
-        "  · no podrás demostrar que el huésped aceptó las condiciones particulares (política de cancelación, mascotas, etc.).\n\n" +
-        "Recomendado: cancela esta acción, pulsa primero el botón sobre azul (✉) para enviar el enlace legal, espera a que firme y luego cobra.\n\n" +
-        "¿Aun así quieres marcarla como cobrada SIN firma?"
+      alert(
+        "⛔ No se puede cobrar esta reserva sin firma legal previa.\n\n" +
+        "Antes de marcarla como cobrada el huésped debe aceptar las condiciones particulares (política de cancelación, mascotas, normas de la casa).\n\n" +
+        "Pasos:\n" +
+        "  1. Pulsa el botón azul (✉) para enviarle el enlace de aceptación.\n" +
+        "  2. Espera a que firme — verás un badge verde \"✓ Firmada\" en la columna Firma legal.\n" +
+        "  3. Marca cobrado cuando ya esté firmada.\n\n" +
+        "Si necesitas excepcionalmente cobrar sin firma, contacta con soporte."
       );
-      if (!ok) return;
+      return;
     }
     setLoadingCobrar(true);
     setError(null);
@@ -85,7 +86,7 @@ export function AccionesReserva({
           estado_cobro === "cobrado"
             ? "Ya cobrado"
             : cobrarNeedsWarning
-              ? "⚠ Marcar cobrado SIN firma legal — recomendado enviar antes el enlace"
+              ? "⛔ Bloqueado: enviar el enlace legal y esperar firma antes de cobrar"
               : "Marcar cobrado (✓ con firma legal previa)"
         }
       >
