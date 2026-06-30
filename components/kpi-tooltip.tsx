@@ -1,51 +1,79 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Info } from "lucide-react";
 
 export type KPITooltipProps = {
-  /** Qué mide exactamente (frase corta en castellano) */
   mide: string;
-  /** Cómo se calcula (fórmula explicada) */
   calculo: string;
-  /** De dónde procede el dato */
   origen: string;
-  /** Qué sistemas intervienen */
   sistemas: string;
 };
 
 /**
  * Tooltip de origen de cada KPI tras revisión Juan (bloque 16).
- * Hover en escritorio, tap en móvil. Muestra 4 campos: qué mide, cómo se calcula, origen y sistemas.
+ * Desktop: popover flotante. Mobile: bottom sheet.
+ * v2 (jun 2026): renderiza el popover en portal-like al body via fixed positioning
+ *   para evitar superposiciones por overflow:hidden en cards padres.
  */
 export function KPITooltip({ mide, calculo, origen, sistemas }: KPITooltipProps) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      // Posicionar bajo el botón, centrado, con offset
+      const popoverWidth = 288; // w-72
+      let left = rect.left + rect.width / 2 - popoverWidth / 2;
+      // Mantener dentro de la viewport con un margen 8px
+      left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8));
+      const top = rect.bottom + 6;
+      setCoords({ top, left });
+    } else if (!open) {
+      setCoords(null);
+    }
+  }, [open]);
 
   return (
-    <span className="relative inline-block align-middle ml-1.5">
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((v) => !v); }}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        className="inline-flex items-center justify-center size-4 rounded-full text-muted-foreground/70 hover:text-foreground transition"
+        className="inline-flex items-center justify-center size-4 rounded-full text-muted-foreground/70 hover:text-foreground transition ml-1.5 align-middle"
         aria-label="Ver origen del dato"
       >
         <Info className="size-3.5" />
       </button>
       {open && (
         <>
-          <div className="hidden sm:block absolute z-50 left-1/2 -translate-x-1/2 mt-2 w-72 bg-popover border border-border rounded-lg shadow-lg p-3 text-left">
-            <KPITooltipContent mide={mide} calculo={calculo} origen={origen} sistemas={sistemas} />
-          </div>
-          <div className="sm:hidden fixed inset-0 z-50 bg-black/40 flex items-end" onClick={() => setOpen(false)}>
-            <div className="w-full bg-popover border-t border-border rounded-t-2xl p-5 max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          {/* Desktop: popover fixed, posición calculada */}
+          {coords && (
+            <div
+              className="hidden sm:block fixed w-72 bg-popover border border-border rounded-lg shadow-xl p-3 text-left pointer-events-none"
+              style={{ top: `${coords.top}px`, left: `${coords.left}px`, zIndex: 9999 }}
+            >
               <KPITooltipContent mide={mide} calculo={calculo} origen={origen} sistemas={sistemas} />
+            </div>
+          )}
+          {/* Mobile: bottom sheet con backdrop */}
+          <div className="sm:hidden fixed inset-0 z-[9999] bg-black/50 flex items-end" onClick={() => setOpen(false)}>
+            <div className="w-full bg-popover border-t border-border rounded-t-2xl p-5 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="w-12 h-1 bg-muted-foreground/30 rounded-full mx-auto mb-3"></div>
+              <KPITooltipContent mide={mide} calculo={calculo} origen={origen} sistemas={sistemas} />
+              <button
+                onClick={() => setOpen(false)}
+                className="mt-4 w-full text-sm font-medium bg-muted text-foreground rounded-lg py-2"
+              >Cerrar</button>
             </div>
           </div>
         </>
       )}
-    </span>
+    </>
   );
 }
 
