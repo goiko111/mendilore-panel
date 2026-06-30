@@ -51,12 +51,28 @@ export default async function CompetenciaPage() {
   let pageError: string | null = null;
   try {
     const supabase = createAdminClient();
-    const { data: c, error: ec } = await supabase
-      .from("competidores")
-      .select("id, nombre, booking_url, estrellas, es_propia")
-      .eq("activo", true)
-      .order("es_propia", { ascending: false })  // Casa Mendilore primero
-      .order("nombre");
+    // Defensivo: si migration 0019 (es_propia) no se ha aplicado, retry sin esa columna
+    let c: any[] | null = null;
+    let ec: any = null;
+    {
+      const r = await supabase
+        .from("competidores")
+        .select("id, nombre, booking_url, estrellas, es_propia")
+        .eq("activo", true)
+        .order("es_propia", { ascending: false })
+        .order("nombre");
+      c = r.data; ec = r.error;
+    }
+    if (ec) {
+      // Fallback sin es_propia
+      const r2 = await supabase
+        .from("competidores")
+        .select("id, nombre, booking_url, estrellas")
+        .eq("activo", true)
+        .order("nombre");
+      c = (r2.data ?? []).map((x: any) => ({ ...x, es_propia: false }));
+      ec = r2.error;
+    }
     if (ec) throw new Error(`competidores: ${ec.message}`);
     competidores = c ?? [];
 
