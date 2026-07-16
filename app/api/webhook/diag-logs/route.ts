@@ -7,29 +7,33 @@ export async function GET(req: Request){
   if(u.searchParams.get("secret")!==SECRET) return NextResponse.json({e:"x"},{status:401});
   const s=createAdminClient();
   const results:any={};
-  // Total
-  const r0 = await s.from("logs_actividad").select("*",{count:'exact',head:true});
-  results.total = r0.count;
-  results.total_err = r0.error?.message;
-  // Últimos 20 por ocurrido_en (columna real)
-  const r1 = await s.from("logs_actividad").select("evento,detalles,ocurrido_en").order("ocurrido_en",{ascending:false}).limit(20);
-  results.ultimos_err = r1.error?.message;
-  results.ultimos = (r1.data||[]).map((l:any)=>({
-    evento: l.evento,
-    ocurrido: l.ocurrido_en?.slice(0,19),
-    detalles_sample: JSON.stringify(l.detalles||{}).slice(0,200),
-  }));
-  // Grouping por evento
-  const r2 = await s.from("logs_actividad").select("evento");
-  const eventos: Record<string,number> = {};
-  for (const l of (r2.data||[])) eventos[l.evento] = (eventos[l.evento]||0)+1;
-  results.por_evento = eventos;
-  // misterplan específicos
-  const r3 = await s.from("logs_actividad").select("evento,detalles,ocurrido_en")
-    .like("evento", "misterplan_%").order("ocurrido_en",{ascending:false}).limit(5);
-  results.misterplan_recent = (r3.data||[]).map((l:any)=>({
-    evento: l.evento, ocurrido: l.ocurrido_en?.slice(0,19),
-    detalles: l.detalles,
-  }));
+  // 1) simple select all sin orden
+  try {
+    const r = await s.from("logs_actividad").select("*").limit(5);
+    results.simple_select = { count: r.data?.length, err: r.error?.message, code: r.error?.code, sample: r.data?.[0] };
+  } catch(e:any) { results.simple_select_exception = e.message; }
+  // 2) select con count
+  try {
+    const r = await s.from("logs_actividad").select("id",{count:'exact'}).limit(1);
+    results.count_check = { totalCount: r.count, err: r.error?.message };
+  } catch(e:any) { results.count_check_exception = e.message; }
+  // 3) INSERT prueba
+  try {
+    const r = await s.from("logs_actividad").insert({
+      evento: "diag_probe_" + Date.now(),
+      detalles: { source: "diag-logs-v3" }
+    }).select();
+    results.insert_check = { err: r.error?.message, code: r.error?.code, ok: !r.error, data: r.data };
+  } catch(e:any) { results.insert_exception = e.message; }
+  // 4) Después del insert, contar
+  try {
+    const r = await s.from("logs_actividad").select("*",{count:'exact'}).like("evento","diag_probe_%");
+    results.probes_count = r.count;
+  } catch(e:any) { results.probes_count_exception = e.message; }
+  // 5) Existe la tabla en information_schema?
+  try {
+    const r = await s.rpc("get_current_setting", { setting_name: "search_path"});
+    results.search_path = { data: r.data, err: r.error?.message };
+  } catch(e:any) { results.search_path_exception = e.message; }
   return NextResponse.json(results);
 }
