@@ -190,7 +190,8 @@ async function clickPrevMonth(frame: Frame): Promise<boolean> {
 /** Devuelve los handles de elementos .reserva visibles en el frame actual */
 async function getReservaHandles(frame: Frame) {
   // Los selectores son aproximados — el recon detectó class="reserva".
-  // Probamos varias variantes para robustez.
+  // Probamos varias variantes para robustez. Solo devolvemos elementos visibles
+  // que NO estén dentro de un modal (evita capturar .reserva del modal fantasma).
   const selectorVariants = [
     '.reserva-bar',
     '.reserva',
@@ -198,10 +199,25 @@ async function getReservaHandles(frame: Frame) {
     '[data-tipo="reserva"]',
   ];
   for (const sel of selectorVariants) {
-    const handles = await frame.$$(sel);
-    if (handles.length > 0) {
-      log.info(`Found ${handles.length} reservas via selector "${sel}"`);
-      return handles;
+    const allHandles = await frame.$$(sel);
+    if (allHandles.length === 0) continue;
+    // Filtrar: solo visibles Y no dentro de .modal
+    const filtered = [];
+    for (const h of allHandles) {
+      const ok = await h.evaluate((el: any) => {
+        // No debe estar dentro de un modal (residual ni activo)
+        if (el.closest('.modal, .modal-dialog, .modal-content, [role="dialog"]')) return false;
+        // Debe ser visible
+        if (!el.offsetParent) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return false;
+        return true;
+      }).catch(() => false);
+      if (ok) filtered.push(h);
+    }
+    if (filtered.length > 0) {
+      log.info(`Found ${filtered.length} reservas via selector "${sel}" (filtered from ${allHandles.length})`);
+      return filtered;
     }
   }
   return [];
@@ -420,20 +436,26 @@ async function closeModal(frame: Frame): Promise<void> {
       (document.body as HTMLElement).style.overflow = '';
     });
   }
-  // 4) Esperar a que .modal.show desaparezca (máx 1s)
+  // 4) Esperar a que .modal.show desaparezca (máx 3s — modales grandes tardan más)
   try {
     await frame.waitForFunction(() => {
-      return !document.querySelector('.modal.show, .modal.in, .modal[style*="display: block"]');
-    }, { timeout: 1000 });
-  } catch { /* modal still open — try one more hard close */
-    await frame.evaluate(() => {
-      document.querySelectorAll('.modal').forEach((m) => {
-        (m as HTMLElement).classList.remove('show', 'in');
-        (m as HTMLElement).style.display = 'none';
-      });
-      document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
+      const visibles = Array.from(document.querySelectorAll('.modal.show, .modal.in, .modal[style*="display: block"], [role="dialog"][aria-modal="true"]'));
+      return visibles.every((m: any) => !m.offsetParent);
+    }, { timeout: 3000 });
+  } catch { /* seguirá con el nuked-cleanup abajo */ }
+
+  // 5) NUKE FINAL: eliminar TODO rastro de modal del DOM (evita fantasmas
+  //    que contengan .reserva y confundan al siguiente getReservaHandles)
+  await frame.evaluate(() => {
+    // Eliminar completamente cualquier .modal / .modal-dialog / [role="dialog"]
+    document.querySelectorAll('.modal, .modal-dialog, .modal-backdrop, [role="dialog"][aria-modal="true"]').forEach((m) => {
+      try { m.remove(); } catch { /* ignore */ }
     });
-  }
+    // Restaurar body
+    document.body.classList.remove('modal-open');
+    (document.body as HTMLElement).style.overflow = '';
+    (document.body as HTMLElement).style.paddingRight = '';
+  }).catch(() => null);
 }
 
 export async function scrapePlanning(
@@ -525,5 +547,6 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
 
