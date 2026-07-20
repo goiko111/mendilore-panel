@@ -108,23 +108,62 @@ async function gotoPlanning(page: Page, frame: Frame): Promise<Frame> {
 
 /** Hace click en el botón siguiente mes del header del Planning */
 async function clickNextMonth(frame: Frame): Promise<boolean> {
-  const candidates = [
-    'button[title*="siguiente"], button[aria-label*="siguiente"]',
-    '.fc-next-button',  // FullCalendar
-    '.btn-next-month',
-    'a.next',
-  ];
-  for (const sel of candidates) {
-    try {
-      await frame.click(sel, { delay: 50 });
+  return await navigateMonth(frame, +1);
+}
+
+/**
+ * Navega ±N meses en el planning de MisterPlan.
+ * MisterPlan expone un input de fecha (dd/mm/yyyy) en la cabecera del planning.
+ * Cambiar su valor + trigger change() hace que el planning re-renderice al mes correspondiente.
+ * Es más robusto que buscar botones chevron cuyo selector cambia entre versiones.
+ */
+async function navigateMonth(frame: Frame, direction: number): Promise<boolean> {
+  try {
+    const result = await frame.evaluate((dir: number) => {
+      // Buscar TODOS los inputs con formato dd/mm/yyyy
+      const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
+      const dateInput = inputs.find(i =>
+        i.offsetParent !== null &&
+        /^\d{2}\/\d{2}\/\d{4}$/.test(i.value)
+      );
+      if (!dateInput) return { ok: false, reason: 'no visible date input found' };
+      const parts = dateInput.value.split('/').map(Number);
+      const [d, m, y] = parts;
+      if (!d || !m || !y) return { ok: false, reason: 'invalid date value: ' + dateInput.value };
+      const date = new Date(y, m - 1, d);
+      date.setMonth(date.getMonth() + dir);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const newVal = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+      dateInput.value = newVal;
+      dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+      dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+      // jQuery event si está disponible
+      const w: any = window;
+      if (w.jQuery) {
+        try { w.jQuery(dateInput).trigger('change'); w.jQuery(dateInput).change(); } catch {}
+      }
+      dateInput.blur();
+      return { ok: true, oldVal: `${pad(d)}/${pad(m)}/${y}`, newVal };
+    }, direction);
+    if ((result as any)?.ok) {
+      log.info(`Month navigation via date input: ${(result as any).oldVal} → ${(result as any).newVal}`);
+      // Esperar a que el planning re-renderice
+      await new Promise(r => setTimeout(r, 1500));
       return true;
-    } catch { /* try next */ }
+    } else {
+      log.warning(`Date input nav failed: ${(result as any)?.reason || 'unknown'}`);
+    }
+  } catch (e: any) {
+    log.warning(`navigateMonth exception: ${e.message}`);
   }
   return false;
 }
 
 async function clickPrevMonth(frame: Frame): Promise<boolean> {
-  // Lista exhaustiva de selectores comunes en calendars/datepickers
+  // Estrategia 1: cambiar el input de fecha (más fiable en MisterPlan TCloudV2)
+  const navOk = await navigateMonth(frame, -1);
+  if (navOk) return true;
+  // Estrategia 2 (fallback): buscar botones chevron por selector CSS
   const candidates = [
     'button[title*="anterior" i], button[aria-label*="anterior" i]',
     'button[title*="previous" i], button[aria-label*="previous" i]',
@@ -547,6 +586,7 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
 
 
