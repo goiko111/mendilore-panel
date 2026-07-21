@@ -267,44 +267,23 @@ async function getReservaHandles(frame: Frame) {
  * Devuelve true si el modal está visible, false si algo falló.
  */
 async function openReservaModal(frame: Frame, idx: number, debug = false): Promise<boolean> {
-  // FIX: en vez de usar handles Puppeteer (que se detachan tras mutación DOM),
-  // hacemos scroll + click via frame.evaluate con selector + índice.
-  // Selector: mismos variantes que getReservaHandles.
-  const SELECTORS = ['.reserva-bar', '.reserva', '[class*="reserva-"]', '[data-tipo="reserva"]'];
-
-  // Scroll a la vista
-  try {
-    await frame.evaluate((selectors: string[], i: number) => {
-      for (const s of selectors) {
-        const all = Array.from(document.querySelectorAll(s)).filter((el: any) =>
-          !el.closest('.modal, .modal-dialog, [role="dialog"]') && el.offsetParent
-        );
-        if (all[i]) { (all[i] as any).scrollIntoView({ block: 'center', behavior: 'instant' }); return; }
-      }
-    }, SELECTORS, idx);
-    await new Promise((r) => setTimeout(r, 200));
-  } catch { /* ignore */ }
+  // Re-fetch handles cada vez para evitar handles obsoletos tras mutaciones del DOM
+  const handles = await getReservaHandles(frame);
+  if (idx >= handles.length) return false;
+  const handle = handles[idx];
 
   try {
-    // Estrategia 1: doble-click via frame.evaluate (no handle detachable)
+    // Scroll el handle a la vista para asegurar que es clickable
+    try {
+      await handle.evaluate((el: any) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      await new Promise((r) => setTimeout(r, 200));
+    } catch { /* ignore */ }
+
+    // Estrategia 1: doble-click + retry (MrPlan TCloudV2 abre con double-click)
+    // Hasta 2 reintentos si el primer click no produce el modal
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        await frame.evaluate((selectors: string[], i: number) => {
-          for (const s of selectors) {
-            const all = Array.from(document.querySelectorAll(s)).filter((el: any) =>
-              !el.closest('.modal, .modal-dialog, [role="dialog"]') && el.offsetParent
-            );
-            const el: any = all[i];
-            if (!el) return;
-            // dispatchEvent nativo dblclick
-            const ev = new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window, button: 0 });
-            el.dispatchEvent(ev);
-            // Fallback jQuery si está disponible
-            const w: any = window;
-            if (w.jQuery) { try { w.jQuery(el).trigger('dblclick'); } catch {} }
-            return;
-          }
-        }, SELECTORS, idx);
+        await handle.click({ clickCount: 2, delay: 50 });
         await new Promise((r) => setTimeout(r, 600));
       } catch { /* try next */ }
 
@@ -365,17 +344,8 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
       }
     }
 
-    // Estrategia 2: single-click + buscar botón "Abrir Reserva" / "Editar Reserva"
-    try {
-      await frame.evaluate((selectors: string[], i: number) => {
-        for (const s of selectors) {
-          const all = Array.from(document.querySelectorAll(s)).filter((el: any) =>
-            !el.closest('.modal, .modal-dialog, [role="dialog"]') && el.offsetParent
-          );
-          if (all[i]) { (all[i] as HTMLElement).click(); return; }
-        }
-      }, SELECTORS, idx);
-    } catch { /* ignore */ }
+    // Estrategia 2: click + buscar botón "Abrir Reserva" / "Editar Reserva"
+    await handles[idx].click({ delay: 50 });
     await new Promise((r) => setTimeout(r, 400));
 
     const openClicked = await frame.evaluate(() => {
