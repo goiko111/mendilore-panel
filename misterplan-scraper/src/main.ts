@@ -93,6 +93,8 @@ async function main() {
 
     // Scrape
     try {
+      // Persistir incrementalmente por mes: si el run muere, los meses ya
+      // completados quedan en BD.
       const result = await scrapePlanning(page, {
         monthsAhead,
         monthsBack,
@@ -100,6 +102,26 @@ async function main() {
         saveScreenshot: screenshotsStore
           ? async (name, buf) => screenshotsStore.setValue(name, buf, { contentType: 'image/png' })
           : undefined,
+        onMonthComplete: async (monthReservas, mIdx, totalM) => {
+          if (monthReservas.length === 0) {
+            log.info(`Month ${mIdx + 1}/${totalM} · 0 reservas, skipping webhook`);
+            return;
+          }
+          const monthPayload: ScraperResult = {
+            source: 'misterplan',
+            scrapedAt: new Date().toISOString(),
+            monthsScraped: 1,
+            reservas: monthReservas,
+            errors: [],
+            sessionRefreshed: false,
+          };
+          const wh = await postToWebhook(webhookUrl, webhookSecret, monthPayload);
+          if (wh.ok) {
+            log.info(`  ✓ Month ${mIdx + 1}/${totalM} persisted (${monthReservas.length} reservas)`);
+          } else {
+            log.warning(`  ✗ Month ${mIdx + 1}/${totalM} webhook fail HTTP ${wh.status} — reservas quedarán en el batch final`);
+          }
+        },
       });
       reservas = result.reservas;
       errors.push(...result.errors);
@@ -147,3 +169,4 @@ main().catch(async (err) => {
   log.exception(err as Error, 'Fatal error in main');
   await Actor.fail((err as Error).message);
 });
+
