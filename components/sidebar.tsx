@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target, Database, Shield } from "lucide-react";
+import { LayoutDashboard, CalendarRange, Users, LineChart, TrendingUp, Settings, LogOut, Menu, X, Bell, CalendarDays, ClipboardList, Target, Database, Shield , BarChart3} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { GlobalSearch } from "./global-search";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ const items = [
   { href: "/reservas", label: "Reservas", icon: CalendarRange },
   { href: "/huespedes", label: "Huéspedes", icon: Users },
   { href: "/metricas", label: "Métricas", icon: LineChart },
+  { href: "/rango-yoy", label: "Comparativa YoY", icon: BarChart3 },
   { href: "/competencia", label: "Competencia", icon: TrendingUp },
   { href: "/configuracion", label: "Configuración", icon: Settings }
 ];
@@ -144,3 +145,4 @@ export function Sidebar({ userEmail, unreadCount = 0 }: { userEmail?: string | n
     </>
   );
 }
+
