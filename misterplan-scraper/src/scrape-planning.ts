@@ -30,6 +30,8 @@ export interface ScrapeOptions {
   debug?: boolean;
   /** Callback para guardar screenshots de debugging */
   saveScreenshot?: (name: string, buffer: Buffer) => Promise<void>;
+  /** Callback tras cada mes procesado — persiste incremental antes de posible timeout */
+  onMonthComplete?: (monthReservas: ReservaScraped[], monthIndex: number, totalMonths: number) => Promise<void>;
 }
 
 export interface ScrapeResult {
@@ -524,6 +526,7 @@ export async function scrapePlanning(
 
   for (let m = 0; m < totalMonths; m++) {
     log.info(`-- Scraping month ${m + 1}/${totalMonths} --`);
+    const reservasBeforeMonth = reservas.length;
     // Esperar a que el planning re-renderice
     await new Promise((r) => setTimeout(r, 1500));
     frame = await getMainFrame(page);
@@ -564,6 +567,17 @@ export async function scrapePlanning(
 
     monthsScraped++;
 
+    // Callback incremental: entregar las reservas de ESTE mes al main
+    // para que las persista via webhook antes de un posible timeout.
+    if (options.onMonthComplete) {
+      const monthReservas = reservas.slice(reservasBeforeMonth);
+      try {
+        await options.onMonthComplete(monthReservas, m, totalMonths);
+      } catch (e: any) {
+        log.warning(`onMonthComplete callback threw: ${e.message}`);
+      }
+    }
+
     // Avanzar al siguiente mes (excepto en el último)
     if (m < totalMonths - 1) {
       const ok = await clickNextMonth(frame);
@@ -586,6 +600,7 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
 
 
