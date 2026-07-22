@@ -14,6 +14,9 @@ type Metrics = {
   porCanal: Record<string, number>;
 };
 
+type ProdDia = { dia: string; habitaciones_ocupadas: number; ingresos_alojamiento: number; ingresos_complementarios: number; ingresos_total: number };
+type ProdResp = { desde: string; hasta: string; dias: ProdDia[]; totales: { alojamiento: number; complementarios: number; total: number; habitaciones: number }; nota?: string; error?: string };
+
 type Response = {
   desde: string;
   hasta: string;
@@ -69,13 +72,18 @@ export default function RangoYoYPage() {
   const [desde, setDesde] = useState(iso(firstOfMonth()));
   const [hasta, setHasta] = useState(iso(lastOfMonth()));
   const [data, setData] = useState<Response | null>(null);
+  const [prod, setProd] = useState<ProdResp | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function load(d: string, h: string) {
     setLoading(true);
     try {
-      const r = await fetch(`/api/metricas/rango-yoy?desde=${d}&hasta=${h}`);
-      setData(await r.json());
+      const [r1, r2] = await Promise.all([
+        fetch(`/api/metricas/rango-yoy?desde=${d}&hasta=${h}`).then(r => r.json()),
+        fetch(`/api/metricas/produccion-diaria?desde=${d}&hasta=${h}`).then(r => r.json()),
+      ]);
+      setData(r1);
+      setProd(r2);
     } finally { setLoading(false); }
   }
   useEffect(() => { load(desde, hasta); /* eslint-disable-next-line */ }, []);
@@ -163,6 +171,58 @@ export default function RangoYoYPage() {
           </div>
 
           <p className="text-xs text-neutral-500 mt-6">Rango actual: {data.actual.dias} días · Rango anterior: {data.anterior.dias} días · Cálculo sobre las 6 habitaciones reales (excluye "Alojamiento completo" y reservas canceladas/no-show).</p>
+
+          {prod && !prod.error && prod.dias.length > 0 && (
+            <div className="mt-8 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">Producción por día · corregida vs bug MrPlan</h3>
+                <div className="text-xs text-neutral-500">
+                  Total: <span className="font-medium text-neutral-800 dark:text-neutral-200">{money(prod.totales.total)}</span> · {prod.totales.habitaciones} noches vendidas
+                </div>
+              </div>
+              <p className="text-[11px] text-neutral-500 mb-3">
+                Alojamiento y complementarios (consumos, cenas, extras) repartidos linealmente entre las noches de estancia real de cada reserva. Ignora el informe agregado de MrPlan que atribuye extras a días equivocados.
+              </p>
+              <div className="max-h-96 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 sticky top-0 bg-white dark:bg-neutral-900">
+                    <tr>
+                      <th className="text-left py-1.5 font-medium">Día</th>
+                      <th className="text-right">Hab. ocup.</th>
+                      <th className="text-right">Alojamiento</th>
+                      <th className="text-right">Complementarios</th>
+                      <th className="text-right font-semibold">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prod.dias.map((d) => (
+                      <tr key={d.dia} className="border-b border-neutral-100 dark:border-neutral-800/70 last:border-0">
+                        <td className="py-1.5 tabular-nums">{d.dia}</td>
+                        <td className="text-right tabular-nums">{d.habitaciones_ocupadas}/6</td>
+                        <td className="text-right tabular-nums text-neutral-600 dark:text-neutral-400">{money(Number(d.ingresos_alojamiento))}</td>
+                        <td className="text-right tabular-nums text-neutral-600 dark:text-neutral-400">{money(Number(d.ingresos_complementarios))}</td>
+                        <td className="text-right tabular-nums font-medium">{money(Number(d.ingresos_total))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="text-sm border-t border-neutral-300 dark:border-neutral-700 sticky bottom-0 bg-white dark:bg-neutral-900">
+                    <tr className="font-medium">
+                      <td className="py-1.5">Total periodo</td>
+                      <td className="text-right tabular-nums">{prod.totales.habitaciones}</td>
+                      <td className="text-right tabular-nums">{money(prod.totales.alojamiento)}</td>
+                      <td className="text-right tabular-nums">{money(prod.totales.complementarios)}</td>
+                      <td className="text-right tabular-nums">{money(prod.totales.total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+          {prod?.error && (
+            <div className="mt-4 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-lg p-3">
+              ⚠️ Producción diaria no disponible: {prod.error}. {prod.hint ? `(${prod.hint})` : ""}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -180,3 +240,4 @@ function Kpi({ label, actual, anterior, yoy, fmt }: { label: string; actual: num
     </div>
   );
 }
+
