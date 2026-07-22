@@ -196,6 +196,44 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     log.warning(`Reserva ${id_reserva}: fecha_reserva vacía, usando fecha_in como fallback`);
   }
 
+  // Líneas granulares de complementarios (Fase 2 · corrige bug MrPlan)
+  // Formato observado en modal MrPlan:
+  //   "LATA REFRESCO x 3 Habitación Margarita 12/07/2026 7,50 €"
+  //   "Desayuno x 1 Habitación Margarita 0,00 €" (sin fecha si está incluido)
+  const complementarios: Array<{ concepto: string; cantidad: number; fecha: string | null; importe: number; raw_text: string }> = [];
+  try {
+    // Buscar bloque "Otros servicios y descuentos" (o similar)
+    const bloqueMatch = modalText.match(/Otros servicios y descuentos([\s\S]{0,5000}?)(?:Condiciones|Totales|Ver reserva|$)/i);
+    if (bloqueMatch) {
+      const bloque = bloqueMatch[1];
+      // Regex: CONCEPTO x CANTIDAD [Habitación XXX] [dd/mm/yyyy] IMPORTE €
+      const linRe = /([A-ZÁÉÍÓÚÑa-záéíóúñ][A-Za-záéíóúÁÉÍÓÚñÑ0-9\s\-_.]{1,80}?)\s+x\s+(\d+)\s+(?:Habitaci[oó]n\s+\S+\s+)?(\d{1,2}\/\d{1,2}\/\d{4})?\s*([\d.,]+)\s*€/g;
+      let m: RegExpExecArray | null;
+      while ((m = linRe.exec(bloque)) !== null) {
+        const concepto = m[1].trim().replace(/\s+/g, ' ');
+        const cantidad = parseInt(m[2], 10) || 1;
+        const fechaRaw = m[3];
+        const importe = parseImporte(m[4]);
+        // Fecha en ISO
+        let fecha: string | null = null;
+        if (fechaRaw) {
+          const parts = fechaRaw.split('/');
+          if (parts.length === 3) {
+            fecha = `${parts[2].padStart(4, '20')}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+        if (concepto && importe >= 0 && concepto.length < 100) {
+          complementarios.push({ concepto, cantidad, fecha, importe, raw_text: m[0].slice(0, 200) });
+        }
+      }
+    }
+  } catch (e) {
+    log.warning(`Reserva ${id_reserva}: fallo extrayendo complementarios: ${(e as Error).message}`);
+  }
+  if (complementarios.length > 0) {
+    log.info(`Reserva ${id_reserva}: ${complementarios.length} líneas de complementarios extraídas`);
+  }
+
   const reserva: ReservaScraped = {
     id_reserva,
     localizador_externo,
@@ -223,7 +261,9 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     fecha_reserva: fecha_reserva || `${fecha_in}T00:00:00Z`,
     observaciones,
     num_huespedes,
-  };
+    complementarios,
+  } as any;
 
   return reserva;
 }
+
