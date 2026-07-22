@@ -152,7 +152,7 @@ CREATE OR REPLACE VIEW public.alertas_complementarios_fuera_estancia AS
 SELECT
   c.id AS complementario_id,
   c.reserva_id,
-  r.localizador_externo,
+  r.id_externo_misterplan,
   r.habitacion,
   c.concepto,
   c.cantidad,
