@@ -15,6 +15,9 @@ type Metrics = {
 };
 
 type ProdDia = { dia: string; habitaciones_ocupadas: number; ingresos_alojamiento: number; ingresos_complementarios: number; ingresos_total: number };
+type AlertaCompl = { complementario_id: string; localizador_externo: string; habitacion: string; concepto: string; cantidad: number; fecha_complementario: string; fecha_in: string; fecha_out: string; importe: number; tipo_discrepancia: string };
+type AlertasResp = { total: number; alertas: AlertaCompl[]; error?: string };
+
 type ProdResp = { desde: string; hasta: string; dias: ProdDia[]; totales: { alojamiento: number; complementarios: number; total: number; habitaciones: number }; nota?: string; error?: string };
 
 type Response = {
@@ -73,17 +76,20 @@ export default function RangoYoYPage() {
   const [hasta, setHasta] = useState(iso(lastOfMonth()));
   const [data, setData] = useState<Response | null>(null);
   const [prod, setProd] = useState<ProdResp | null>(null);
+  const [alertas, setAlertas] = useState<AlertasResp | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function load(d: string, h: string) {
     setLoading(true);
     try {
-      const [r1, r2] = await Promise.all([
+      const [r1, r2, r3] = await Promise.all([
         fetch(`/api/metricas/rango-yoy?desde=${d}&hasta=${h}`).then(r => r.json()),
         fetch(`/api/metricas/produccion-diaria?desde=${d}&hasta=${h}`).then(r => r.json()),
+        fetch(`/api/metricas/alertas-complementarios`).then(r => r.json()),
       ]);
       setData(r1);
       setProd(r2);
+      setAlertas(r3);
     } finally { setLoading(false); }
   }
   useEffect(() => { load(desde, hasta); /* eslint-disable-next-line */ }, []);
@@ -223,6 +229,45 @@ export default function RangoYoYPage() {
               ⚠️ Producción diaria no disponible: {prod.error}. {prod.hint ? `(${prod.hint})` : ""}
             </div>
           )}
+
+          {alertas && !alertas.error && alertas.total > 0 && (
+            <div className="mt-6 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-900 rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-1">
+                ⚠️ Bug de MrPlan detectado — {alertas.total} complementarios con fecha fuera de la estancia
+              </h3>
+              <p className="text-xs text-amber-800 dark:text-amber-300 mb-3">
+                MrPlan ha atribuido estos consumos a fechas que no coinciden con la estancia real del huésped. Nuestro cálculo los usa igual porque tiene la fecha exacta, pero es evidencia del bug para la reclamación técnica.
+              </p>
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-neutral-500 border-b border-amber-200 dark:border-amber-900 sticky top-0 bg-amber-50 dark:bg-amber-950/20">
+                    <tr>
+                      <th className="text-left py-1.5 font-medium">Localizador</th>
+                      <th className="text-left font-medium">Habit.</th>
+                      <th className="text-left font-medium">Concepto</th>
+                      <th className="text-left font-medium">Fecha atribuida</th>
+                      <th className="text-left font-medium">Estancia real</th>
+                      <th className="text-right font-medium">Importe</th>
+                      <th className="text-left font-medium">Discrepancia</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alertas.alertas.map((a) => (
+                      <tr key={a.complementario_id} className="border-b border-amber-100 dark:border-amber-900/50 last:border-0">
+                        <td className="py-1 font-mono">{a.localizador_externo}</td>
+                        <td className="capitalize">{a.habitacion}</td>
+                        <td>{a.concepto} <span className="text-neutral-500">×{a.cantidad}</span></td>
+                        <td className="text-red-700 dark:text-red-400 tabular-nums">{a.fecha_complementario}</td>
+                        <td className="text-neutral-600 tabular-nums">{a.fecha_in} → {a.fecha_out}</td>
+                        <td className="text-right tabular-nums">{money(Number(a.importe))}</td>
+                        <td className="text-amber-700 dark:text-amber-400">{a.tipo_discrepancia}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -240,4 +285,5 @@ function Kpi({ label, actual, anterior, yoy, fmt }: { label: string; actual: num
     </div>
   );
 }
+
 
