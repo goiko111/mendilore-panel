@@ -57,6 +57,7 @@ type ReservaPayload = {
   fecha_reserva: string;
   observaciones: string | null;
   num_huespedes: number | null;
+  complementarios?: Array<{ concepto: string; cantidad: number; fecha: string | null; importe: number; raw_text?: string }>;
 };
 
 type Payload = {
@@ -102,8 +103,22 @@ export async function POST(request: Request) {
         continue;
       }
       const accion = (data as any)?.[0]?.accion;
+      const reserva_id = (data as any)?.[0]?.reserva_id;
       if (accion === "insert") insertadas++;
       else if (accion === "update") actualizadas++;
+
+      // Fase 2: persistir líneas granulares de complementarios si el scraper las mandó
+      const lineas = (reserva as any).complementarios;
+      if (reserva_id && Array.isArray(lineas) && lineas.length > 0) {
+        try {
+          await supabase.rpc("upsert_complementarios_reserva", {
+            p_reserva_id: reserva_id,
+            p_lineas: lineas as any,
+          });
+        } catch (e) {
+          errores.push({ id_reserva: reserva.id_reserva, error: `complementarios: ${(e as Error).message}` });
+        }
+      }
     } catch (err) {
       errores.push({ id_reserva: reserva.id_reserva, error: (err as Error).message });
     }
@@ -153,3 +168,4 @@ export async function GET() {
     auth: "header x-misterplan-secret",
   });
 }
+
