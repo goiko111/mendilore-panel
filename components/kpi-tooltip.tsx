@@ -54,7 +54,7 @@ export function KPITooltip({ mide, calculo, origen, sistemas }: KPITooltipProps)
           {/* Desktop: popover fixed, posición calculada */}
           {coords && (
             <div
-              className="hidden sm:block fixed w-72 bg-popover border border-border rounded-lg shadow-xl p-3 text-left pointer-events-none"
+              className="hidden sm:block fixed z-[9999] w-72 bg-white dark:bg-neutral-900 border border-border rounded-lg shadow-2xl p-3 text-left pointer-events-none"
               style={{ top: `${coords.top}px`, left: `${coords.left}px`, zIndex: 9999 }}
             >
               <KPITooltipContent mide={mide} calculo={calculo} origen={origen} sistemas={sistemas} />
@@ -99,3 +99,4 @@ function KPITooltipContent({ mide, calculo, origen, sistemas }: KPITooltipProps)
     </div>
   );
 }
+
