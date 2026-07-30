@@ -88,7 +88,13 @@ export default async function DashboardPage() {
     .order("fecha_in", { ascending: true });
   const cobros14d = (cobros14dRaw ?? []).filter((r: any) => {
     const fp = (r.forma_pago ?? "").toString().toLowerCase();
+    const canal = (r.canal ?? "").toString().toLowerCase();
+    // Booking Payments / tarjeta virtual → gestiona el portal, no nosotros
     if (/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard|prepago.*ota|tarjeta.*virtual/i.test(fp)) return false;
+    // Regla Juan (jul 2026): TODO el canal Booking va por Booking Payments → sin gestión nuestra
+    if (canal === "booking") return false;
+    // Regla Juan (jul 2026): web propia = 50% anticipado + resto a la salida → sin gestión, cobra en check-out
+    if (canal === "web_propia") return false;
     return true;
   });
 
@@ -322,3 +328,4 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
