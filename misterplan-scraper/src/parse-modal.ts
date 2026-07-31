@@ -40,12 +40,20 @@ function parseImporte(s: string): number {
 
 function normalizarCanal(s: string): Canal {
   const t = s.toLowerCase().trim();
+  // OTAs
   if (t.includes('booking')) return 'booking';
   if (t.includes('airbnb')) return 'airbnb';
   if (t.includes('expedia')) return 'expedia';
-  if (t.includes('directo') || t.includes('teléfono') || t.includes('telefono')) return 'directo';
-  if (t.includes('web') || t.includes('propia')) return 'web_propia';
-  if (t.includes('walk') || t.includes('puerta')) return 'walk_in';
+  if (t.includes('vrbo') || t.includes('homeaway')) return 'expedia';
+  if (t.includes('rural') && !t.includes('cloud')) return 'otro';
+  // Teléfono como canal propio (petición Juan jul 2026)
+  if (t.includes('tel') || t.includes('llamada') || t.includes('phone')) return 'telefono';
+  // Motor web propio — MrPlan lo llama "Cloud (Mi web)"
+  if (t.includes('cloud') || t.includes('mi web') || t.includes('web') || t.includes('propia')) return 'web_propia';
+  // Presencial
+  if (t.includes('walk') || t.includes('puerta') || t.includes('mostrador')) return 'walk_in';
+  // Directo (email, manual sin especificar)
+  if (t.includes('directo') || t.includes('manual') || t.includes('recepcion')) return 'directo';
   return 'otro';
 }
 
@@ -109,7 +117,9 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
   const fecha_out = fechasMatch ? parseFechaDDMMYYYY(fechasMatch[2]) : '';
   const noches = fechasMatch ? parseInt(fechasMatch[3], 10) : 0;
 
-  const canalMatch = modalText.match(/Reserva desde\s+([^\n.]+?)(?:\s+Comisi|\n|$)/i);
+  // FIX jul 2026: MrPlan escribe "Reserva desde Booking.com Comisión..." — el regex
+  // anterior excluía puntos y NO capturaba "Booking.com", cayendo todo a 'otro'.
+  const canalMatch = modalText.match(/Reserva desde\s+(.{1,40}?)\s*(?:Comisi|Id reserva|Localizador|\n)/i);
   const canal: Canal = canalMatch ? normalizarCanal(canalMatch[1]) : 'otro';
 
   const habMatch = modalText.match(/Habitaci[oó]n\s+(\w+(?:\s+\w+)?)\s*\(/i)
@@ -266,4 +276,5 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
 
   return reserva;
 }
+
 
