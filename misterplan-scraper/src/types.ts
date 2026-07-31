@@ -6,6 +6,7 @@
 
 export type Canal =
   | 'directo'
+  | 'telefono'
   | 'booking'
   | 'airbnb'
   | 'expedia'
@@ -86,3 +87,4 @@ export interface ScraperResult {
   errors: ScrapingError[];
   sessionRefreshed: boolean;
 }
+
