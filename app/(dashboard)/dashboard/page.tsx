@@ -223,7 +223,10 @@ export default async function DashboardPage() {
     checkouts_hoy: { value: cntCheckoutsHoy ?? 0, detail: (checkoutsHoy ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
     huespedes_presentes: { value: cntPresentes ?? 0, hint: reservasActivasCount > 0 ? `${reservasActivasCount} ${reservasActivasCount === 1 ? "habitación ocupada" : "habitaciones ocupadas"}` : "Sin huéspedes" },
     llegadas_manana: { value: cntLlegadasManana ?? 0, detail: (llegadasManana ?? []).map((r: any) => `${r.huespedes?.nombre ?? '—'} · ${r.habitacion}`) },
-    cobros_14d: { value: cntCobros7d ?? 0, importe: cobros7dImporte },
+    cobros_14d: {
+      value: cobros14d.length,
+      importe: cobros14d.reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0),
+    },
     habitaciones_libres: { value: cntOcupadasHoy ?? 0, total: 6, hint: `${libresHoy} ${libresHoy === 1 ? "libre" : "libres"}` },
     proxima_llegada: { value: proxLlegada ? `${formatDate(proxLlegada.fecha_in)}` : '—', detail: proxLlegada ? `${(proxLlegada.huespedes as any)?.nombre ?? '—'} · ${proxLlegada.habitacion}` : '' },
     tareas_pendientes: { value: cntTareasHoy },
@@ -330,5 +333,6 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
 
 
