@@ -83,7 +83,7 @@ export async function GET(req: Request) {
       id, habitacion, fecha_in, estado_reserva,
       huesped:huespedes ( nombre, apellidos, email )
     `)
-    .gte("created_at", hace48h)
+    .gte("creado_en", hace48h)
     .gte("fecha_in", today)
     .is("legal_enviado_en", null)
     .not("estado_reserva", "in", "(cancelada,no_show)");
@@ -158,3 +158,4 @@ export async function GET(req: Request) {
     detalle_errores: errores.slice(0, 5),
   });
 }
+
