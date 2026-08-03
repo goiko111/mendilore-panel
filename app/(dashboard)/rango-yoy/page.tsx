@@ -18,7 +18,7 @@ type ProdDia = { dia: string; habitaciones_ocupadas: number; ingresos_alojamient
 type AlertaCompl = { complementario_id: string; localizador_externo: string; habitacion: string; concepto: string; cantidad: number; fecha_complementario: string; fecha_in: string; fecha_out: string; importe: number; tipo_discrepancia: string };
 type AlertasResp = { total: number; alertas: AlertaCompl[]; error?: string };
 
-type ProdResp = { desde: string; hasta: string; dias: ProdDia[]; totales: { alojamiento: number; complementarios: number; total: number; habitaciones: number }; nota?: string; error?: string };
+type ProdResp = { desde: string; hasta: string; dias: ProdDia[]; totales: { alojamiento: number; complementarios: number; total: number; habitaciones: number }; nota?: string; error?: string; hint?: string };
 
 type Response = {
   desde: string;
@@ -285,5 +285,6 @@ function Kpi({ label, actual, anterior, yoy, fmt }: { label: string; actual: num
     </div>
   );
 }
+
 
 
