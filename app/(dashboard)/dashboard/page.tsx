@@ -163,7 +163,7 @@ export default async function DashboardPage() {
   const { count: cntPace7d } = await supabase
     .from("reservas")
     .select("id", { count: "exact", head: true })
-    .gte("created_at", hace7d)
+    .gte("creado_en", hace7d)
     .gt("fecha_in", todayStr)
     .neq("estado_cobro", "cancelado");
 
@@ -191,7 +191,7 @@ export default async function DashboardPage() {
   const { count: cntReservasHoy } = await supabase
     .from("reservas")
     .select("id", { count: "exact", head: true })
-    .gte("created_at", startToday);
+    .gte("creado_en", startToday);
 
   // KPIs adicionales (huéspedes etc) — calculo bajo demanda en cliente
   // Por ahora paso solo los más útiles
@@ -333,6 +333,7 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
 
 
 
