@@ -10,6 +10,7 @@ import { HABITACIONES_VALIDAS } from "@/lib/constants";
 import { HousekeepingBlock } from "@/components/housekeeping-block";
 import { AlertasInlineBlock } from "@/components/alertas-inline-block";
 import { SyncStatusBanner } from "@/components/sync-status-banner";
+import { TesoreriaBlock } from "@/components/tesoreria-block";
 
 export const metadata = { title: "Resumen" };
 
@@ -276,6 +277,7 @@ export default async function DashboardPage() {
 
       <SyncStatusBanner />
       <AlertasInlineBlock />
+      <TesoreriaBlock />
 
       <ResumenConfigurable data={kpisData as any} />
 
@@ -328,4 +330,5 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
 
