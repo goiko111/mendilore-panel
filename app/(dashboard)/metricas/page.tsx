@@ -162,14 +162,14 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   // Lead time + ALOS: reservas confirmadas últimos 90d
   const { data: leadRows } = await supabase
     .from("reservas")
-    .select("fecha_in, fecha_out, noches, created_at, estado_cobro")
-    .gte("created_at", hace90d)
+    .select("fecha_in, fecha_out, noches, creado_en, estado_cobro")
+    .gte("creado_en", hace90d)
     .neq("estado_cobro", "cancelado")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const leadTimes = (leadRows ?? [])
     .map((r) => {
       const ci = new Date(r.fecha_in as string).getTime();
-      const ca = new Date(r.created_at as string).getTime();
+      const ca = new Date(r.creado_en as string).getTime();
       return (ci - ca) / 86400_000;
     })
     .filter((d) => d >= 0 && d <= 365);
@@ -206,7 +206,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const { data: paceRows } = await supabase
     .from("reservas")
     .select("id, importe_total, fecha_in")
-    .gte("created_at", hace7d)
+    .gte("creado_en", hace7d)
     .gte("fecha_in", todayStr)
     .neq("estado_cobro", "cancelado")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
@@ -405,8 +405,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           hint={paceCount > 0 ? `${formatCurrency(paceRevenue)} en cartera` : "Sin nuevas reservas"}
           tooltip={{
             mide: "Cuántas reservas nuevas han entrado en los últimos 7 días (creadas, no llegadas).",
-            calculo: "COUNT(reservas) WHERE created_at >= hace 7 días. La cartera es la SUMA del importe_total de esas reservas.",
-            origen: "MisterPlan — created_at de cada reserva.",
+            calculo: "COUNT(reservas) WHERE creado_en >= hace 7 días. La cartera es la SUMA del importe_total de esas reservas.",
+            origen: "MisterPlan — fecha de alta de cada reserva.",
             sistemas: "MrPlan → robot → BD del panel. Útil para ver si esta semana está entrando más o menos volumen que la anterior.",
           }}
         />
