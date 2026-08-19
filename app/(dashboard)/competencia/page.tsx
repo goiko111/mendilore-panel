@@ -286,10 +286,19 @@ export default async function CompetenciaPage() {
                         );
                       }
                       const pn = s.precio_por_noche != null ? Number(s.precio_por_noche) : NaN;
-                      if (!s.disponible || isNaN(pn) || pn <= 0) {
+                      if (!s.disponible) {
                         return (
                           <td key={check_in} className="px-4 py-3 text-right">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-400">Sold out</span>
+                          </td>
+                        );
+                      }
+                      if (isNaN(pn) || pn <= 0) {
+                        // Disponible en Booking pero el robot no pudo leer el precio
+                        // (p.ej. estancia mínima) — NO es "Completo".
+                        return (
+                          <td key={check_in} className="px-4 py-3 text-right">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400" title="El hotel aparece disponible en Booking pero no pudimos leer su precio para esta ventana (suele ser por estancia mínima).">Sin precio</span>
                           </td>
                         );
                       }
@@ -455,7 +464,8 @@ export default async function CompetenciaPage() {
                 const snap = ultimosPorVentana.get(`${c.id}|${cin}`);
                 if (!snap) { sinDato++; return; }
                 total++;
-                if (!snap.disponible || !snap.precio_por_noche || Number(snap.precio_por_noche) <= 0) soldout++;
+                if (!snap.disponible) soldout++;
+                else if (!snap.precio_por_noche || Number(snap.precio_por_noche) <= 0) sinDato++;
               });
               const pct = total > 0 ? Math.round((soldout / total) * 100) : 0;
               return { competidor: c, total, soldout, sinDato, pct };
@@ -516,3 +526,4 @@ export default async function CompetenciaPage() {
     </div>
   );
 }
+
