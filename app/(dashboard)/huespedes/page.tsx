@@ -77,23 +77,34 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   // 2) Cargar todas las reservas para enriquecer con KPIs por huésped
   const { data: todasReservas } = await supabase
     .from("reservas")
-    .select("huesped_id, fecha_in, fecha_out, noches, importe_total, estado_cobro")
+    .select("huesped_id, fecha_in, fecha_out, noches, importe_total, estado_cobro, id_externo_misterplan")
     .neq("estado_cobro", "cancelado")
     .limit(5000);
 
   // Mapa huesped_id → { reservas, noches, gasto, ultimaFechaIn, primeraFechaIn }
   const today = new Date().toISOString().slice(0, 10);
+  // Multi-habitación: una reserva con N habitaciones son N filas con el mismo
+  // id_externo_misterplan. Para KPIs de huésped contamos ESTANCIAS distintas,
+  // no filas — si no, quien reserva 2 habitaciones una vez saldría como repetidor.
   const statsMap = new Map<string, { reservas: number; noches: number; gasto: number; ultima: string; primera: string; futuras: number }>();
+  const estanciasVistas = new Map<string, Set<string>>();
   for (const r of todasReservas ?? []) {
     const k = r.huesped_id as string;
     if (!k) continue;
     const acc = statsMap.get(k) ?? { reservas: 0, noches: 0, gasto: 0, ultima: "", primera: "", futuras: 0 };
-    acc.reservas += 1;
-    acc.noches += Number(r.noches ?? 0);
-    acc.gasto += Number(r.importe_total ?? 0);
+    const stayKey = (r.id_externo_misterplan as string) || `${r.fecha_in}|${r.fecha_out}`;
+    const vistas = estanciasVistas.get(k) ?? new Set<string>();
+    const esNuevaEstancia = !vistas.has(stayKey);
+    if (esNuevaEstancia) {
+      vistas.add(stayKey);
+      estanciasVistas.set(k, vistas);
+      acc.reservas += 1;
+      acc.noches += Number(r.noches ?? 0);
+      if ((r.fecha_in as string) >= today) acc.futuras += 1;
+    }
+    acc.gasto += Number(r.importe_total ?? 0); // el importe SÍ se suma por habitación (está repartido)
     if (!acc.primera || r.fecha_in < acc.primera) acc.primera = r.fecha_in as string;
     if (!acc.ultima || r.fecha_in > acc.ultima) acc.ultima = r.fecha_in as string;
-    if ((r.fecha_in as string) >= today) acc.futuras += 1;
     statsMap.set(k, acc);
   }
 
@@ -140,7 +151,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
         <StatCard label="Únicos" value={String(count ?? 0)} hint="En base de datos"
           tooltip={{
             mide: "Personas distintas que han hecho alguna reserva (no se duplican aunque tengan varias estancias).",
-            calculo: "Conteo de registros en la tabla huespedes (filtros aplicados respetan país y fuente).",
+            calculo: "Conteo de registros en la tabla huespedes (filtros aplicados respetan país y fuente). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
             origen: "Cada reserva nueva crea o reutiliza la ficha huésped por email coincidente.",
             sistemas: "BD propia (tabla huespedes) — alimentada desde MisterPlan vía scraper.",
           }}
@@ -148,7 +159,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
         <StatCard label="Repetidores" value={String(totalRepetidores)} hint={count ? `${((totalRepetidores / (count ?? 1)) * 100).toFixed(0)}% del total` : "—"}
           tooltip={{
             mide: "Huéspedes que han tenido MÁS DE UNA reserva (no canceladas) — clientes fieles.",
-            calculo: "Por cada huésped, contar reservas (excluyendo canceladas). Si conteo > 1 → repetidor.",
+            calculo: "Por cada huésped, contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde jul 2025).",
             origen: "Cálculo en tiempo real sobre la tabla reservas filtrando estado != cancelado.",
             sistemas: "BD propia (reservas + huespedes). Por debajo, MisterPlan es la fuente original.",
           }}
