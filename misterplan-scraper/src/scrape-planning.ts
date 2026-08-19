@@ -548,8 +548,8 @@ export async function scrapePlanning(
         }
 
         const parsed = await parseModalReserva(frame);
-        if (parsed) {
-          reservas.push(parsed);
+        if (parsed && parsed.length > 0) {
+          reservas.push(...parsed);
         } else {
           errors.push({ step: 'parseModal', error: 'parse returned null', reservaIndex: i });
         }
@@ -588,10 +588,10 @@ export async function scrapePlanning(
     }
   }
 
-  // Deduplicar por id_reserva (alguna reserva puede aparecer en 2 meses si cruza)
+  // Deduplicar por id_reserva + habitación (multi-room: una fila por habitación; cruces de mes)
   const dedup = new Map<string, ReservaScraped>();
   for (const r of reservas) {
-    dedup.set(r.id_reserva, r);
+    dedup.set(`${r.id_reserva}|${r.habitacion}`, r);
   }
 
   return {
@@ -600,6 +600,7 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
 
 
