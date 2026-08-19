@@ -80,7 +80,7 @@ export default async function DashboardPage() {
   //     (excluye Booking Payments / OTA — esos los gestiona el portal)
   const { data: cobros14dRaw } = await supabase
     .from("reservas")
-    .select("id, habitacion, fecha_in, importe_total, importe_moneda, canal, forma_pago, huespedes(nombre, apellidos)", { count: "exact" })
+    .select("id, habitacion, fecha_in, importe_total, importe_moneda, canal, forma_pago, anticipo, huespedes(nombre, apellidos)", { count: "exact" })
     .eq("estado_cobro", "pendiente")
     .in("estado_reserva", ["confirmada", "pendiente"])
     .gte("fecha_in", todayStr)
@@ -90,12 +90,14 @@ export default async function DashboardPage() {
   const cobros14d = (cobros14dRaw ?? []).filter((r: any) => {
     const fp = (r.forma_pago ?? "").toString().toLowerCase();
     const canal = (r.canal ?? "").toString().toLowerCase();
+    const anticipo = Number(r.anticipo ?? 0);
     // Booking Payments / tarjeta virtual → gestiona el portal, no nosotros
     if (/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard|prepago.*ota|tarjeta.*virtual/i.test(fp)) return false;
-    // Regla Juan (jul 2026): TODO el canal Booking va por Booking Payments → sin gestión nuestra
+    // Canal Booking → Booking Payments contratado → sin gestión nuestra
     if (canal === "booking") return false;
-    // Regla Juan (jul 2026): web propia = 50% anticipado + resto a la salida → sin gestión, cobra en check-out
-    if (canal === "web_propia") return false;
+    // Web propia con anticipo REAL cobrado → garantizada, resto a la salida
+    // (feedback Juan 10.08: si NO hay anticipo, como Álvaro, SÍ es pendiente real)
+    if (canal === "web_propia" && anticipo > 0) return false;
     return true;
   });
 
@@ -333,6 +335,7 @@ export default async function DashboardPage() {
     </div>
   );
 }
+
 
 
 
