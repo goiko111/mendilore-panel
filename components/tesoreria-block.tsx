@@ -83,6 +83,8 @@ export function TesoreriaBlock() {
       <p className="text-xs text-muted-foreground mb-3">
         Solo <strong>Pendiente de gestión</strong> requiere acción vuestra. Prepago OTA y Anticipo web están
         garantizados: se cobran solos, pero los mostramos para el seguimiento de tesorería.
+        {" "}<span className="font-medium">Periodo: reservas con salida en los últimos 90 días + todas las futuras.</span>
+        {" "}El "Anticipo web" solo se asigna cuando hay un anticipo real cobrado en MisterPlan.
       </p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -165,3 +167,4 @@ export function TesoreriaBlock() {
     </section>
   );
 }
+
