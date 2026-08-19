@@ -73,7 +73,7 @@ function splitNombre(s: string): { nombre: string; apellidos: string | null } {
   return { nombre: parts[0], apellidos: parts.slice(1).join(' ') };
 }
 
-export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | null> {
+export async function parseModalReserva(frame: Frame): Promise<ReservaScraped[] | null> {
   let modalText = '';
   let foundSelector = '';
   for (const sel of MODAL_SELECTORS) {
@@ -122,9 +122,21 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
   const canalMatch = modalText.match(/Reserva desde\s+(.{1,40}?)\s*(?:Comisi|Id reserva|Localizador|\n)/i);
   const canal: Canal = canalMatch ? normalizarCanal(canalMatch[1]) : 'otro';
 
-  const habMatch = modalText.match(/Habitaci[oó]n\s+(\w+(?:\s+\w+)?)\s*\(/i)
-    || modalText.match(/Habitaci[oó]n\s+(\w+)/i);
-  const habitacion = habMatch ? normalizarHabitacion(habMatch[1]) : '';
+  // === MULTI-HABITACIÓN (feedback Juan 10.08 · caso Ignacio Sanchis) ===
+  // El modal de una reserva multi-habitación lista TODAS sus habitaciones.
+  // Antes tomábamos solo la primera → faltaban habitaciones (Margarita) y el
+  // importe quedaba corto (1030 vs 1131,30 reales). Ahora emitimos una fila
+  // por habitación con el importe repartido.
+  const roomRe = /Habitaci[oó]n\s+([A-Za-záéíóúÁÉÍÓÚñÑ]+)/gi;
+  const roomsSeen: Array<{ hab: string; idx: number }> = [];
+  let rmm: RegExpExecArray | null;
+  while ((rmm = roomRe.exec(modalText)) !== null) {
+    const hab = normalizarHabitacion(rmm[1]);
+    if ((HABITACIONES_VALIDAS as string[]).includes(hab) && !roomsSeen.some((u) => u.hab === hab)) {
+      roomsSeen.push({ hab, idx: rmm.index });
+    }
+  }
+  const habitacion = roomsSeen.length > 0 ? roomsSeen[0].hab : '';
 
   const nombreMatch = modalText.match(/Nombre\s+([^\n]+?)(?:\s*Espa[ñn]ol|\n)/i);
   const { nombre: huesped_nombre, apellidos: huesped_apellidos } = nombreMatch
@@ -217,13 +229,14 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     if (bloqueMatch) {
       const bloque = bloqueMatch[1];
       // Regex: CONCEPTO x CANTIDAD [Habitación XXX] [dd/mm/yyyy] IMPORTE €
-      const linRe = /([A-ZÁÉÍÓÚÑa-záéíóúñ][A-Za-záéíóúÁÉÍÓÚñÑ0-9\s\-_.]{1,80}?)\s+x\s+(\d+)\s+(?:Habitaci[oó]n\s+\S+\s+)?(\d{1,2}\/\d{1,2}\/\d{4})?\s*([\d.,]+)\s*€/g;
+      const linRe = /([A-ZÁÉÍÓÚÑa-záéíóúñ][A-Za-záéíóúÁÉÍÓÚñÑ0-9\s\-_.]{1,80}?)\s+x\s+(\d+)\s+(?:Habitaci[oó]n\s+(\S+)\s+)?(\d{1,2}\/\d{1,2}\/\d{4})?\s*([\d.,]+)\s*€/g;
       let m: RegExpExecArray | null;
       while ((m = linRe.exec(bloque)) !== null) {
         const concepto = m[1].trim().replace(/\s+/g, ' ');
         const cantidad = parseInt(m[2], 10) || 1;
-        const fechaRaw = m[3];
-        const importe = parseImporte(m[4]);
+        const habLinea = m[3] ? normalizarHabitacion(m[3]) : null;
+        const fechaRaw = m[4];
+        const importe = parseImporte(m[5]);
         // Fecha en ISO
         let fecha: string | null = null;
         if (fechaRaw) {
@@ -233,7 +246,7 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
           }
         }
         if (concepto && importe >= 0 && concepto.length < 100) {
-          complementarios.push({ concepto, cantidad, fecha, importe, raw_text: m[0].slice(0, 200) });
+          complementarios.push({ concepto, cantidad, fecha, importe, raw_text: m[0].slice(0, 200), habitacion: habLinea } as any);
         }
       }
     }
@@ -244,37 +257,75 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped | 
     log.info(`Reserva ${id_reserva}: ${complementarios.length} líneas de complementarios extraídas`);
   }
 
-  const reserva: ReservaScraped = {
-    id_reserva,
-    localizador_externo,
-    canal,
-    habitacion,
-    fecha_in,
-    fecha_out,
-    noches,
-    huesped_nombre: huesped_nombre || 'Sin nombre',
-    huesped_apellidos,
-    huesped_email,
-    huesped_telefono,
-    huesped_pais: null,
-    huesped_documento: null,
-    importe_total,
-    importe_alojamiento,
-    importe_complementarios,
-    importe_moneda: 'EUR',
-    anticipo,
-    pendiente_cobro,
-    estado_reserva,
-    estado_cobro,
-    forma_pago,
-    factura_num: null,
-    fecha_reserva: fecha_reserva || `${fecha_in}T00:00:00Z`,
-    observaciones,
-    num_huespedes,
-    complementarios,
-  } as any;
+  // === Construcción: una fila por habitación con importes repartidos ===
+  const rooms = roomsSeen.length > 0 ? roomsSeen : [{ hab: habitacion, idx: 0 }];
 
-  return reserva;
+  // Intentar importe de alojamiento POR habitación: primer importe € tras el nombre
+  const perRoomAloja: number[] = rooms.map(({ hab, idx }) => {
+    const seg = modalText.slice(idx, idx + 160);
+    const m = seg.match(/([\d.,]+)\s*€/);
+    return m ? parseImporte(m[1]) : 0;
+  });
+  const sumPerRoom = perRoomAloja.reduce((a, b) => a + b, 0);
+  const usePerRoom = rooms.length > 1 && perRoomAloja.every((a) => a > 0) && sumPerRoom > 0;
+
+  const shares: number[] = rooms.map((_, i) =>
+    usePerRoom ? perRoomAloja[i] / sumPerRoom : 1 / rooms.length
+  );
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const out: ReservaScraped[] = rooms.map(({ hab }, i) => {
+    // Complementarios de ESTA habitación (línea con "Habitación X"); sin habitación → primera fila
+    const compRoom = complementarios.filter((c: any) =>
+      c.habitacion ? c.habitacion === hab : i === 0
+    );
+    const compImporte = compRoom.reduce((a: number, c: any) => a + c.importe, 0);
+    const alojaRoom = rooms.length === 1
+      ? importe_alojamiento
+      : usePerRoom ? perRoomAloja[i] : round2((importe_alojamiento ?? 0) * shares[i]);
+    const totalRoom = rooms.length === 1
+      ? importe_total
+      : round2((alojaRoom ?? 0) + (compImporte > 0 ? compImporte : round2(importe_complementarios * shares[i])));
+    return {
+      id_reserva,
+      localizador_externo,
+      canal,
+      habitacion: hab,
+      fecha_in,
+      fecha_out,
+      noches,
+      huesped_nombre: huesped_nombre || 'Sin nombre',
+      huesped_apellidos,
+      huesped_email,
+      huesped_telefono,
+      huesped_pais: null,
+      huesped_documento: null,
+      importe_total: totalRoom,
+      importe_alojamiento: alojaRoom,
+      importe_complementarios: rooms.length === 1
+        ? importe_complementarios
+        : (compImporte > 0 ? round2(compImporte) : round2(importe_complementarios * shares[i])),
+      importe_moneda: 'EUR',
+      anticipo: rooms.length === 1 ? anticipo : round2(anticipo * shares[i]),
+      pendiente_cobro: rooms.length === 1 ? pendiente_cobro : round2(pendiente_cobro * shares[i]),
+      estado_reserva,
+      estado_cobro,
+      forma_pago,
+      factura_num: null,
+      fecha_reserva: fecha_reserva || `${fecha_in}T00:00:00Z`,
+      observaciones,
+      num_huespedes: i === 0 ? num_huespedes : null,
+      complementarios: compRoom.map(({ habitacion: _h, ...rest }: any) => rest),
+    } as any;
+  });
+
+  if (rooms.length > 1) {
+    log.info(`Reserva ${id_reserva}: MULTI-HABITACIÓN → ${rooms.length} filas (${rooms.map((r) => r.hab).join(', ')})${usePerRoom ? ' con importes por habitación' : ' con reparto proporcional'}`);
+  }
+
+  return out;
 }
+
 
 
