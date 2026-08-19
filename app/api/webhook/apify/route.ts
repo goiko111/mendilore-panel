@@ -222,7 +222,10 @@ export async function POST(request: Request) {
       check_out: checkOutItem,
       precio_total: typeof item.price === "number" ? item.price : null,
       moneda,
-      disponible: item.available !== false && item.price !== null && item.price !== undefined,
+      // Feedback 10.08: NO marcar "no disponible" solo porque falte el precio.
+      // El scraper a veces no extrae precio (restricciones de estancia mínima,
+      // layout distinto) aunque el hotel SÍ tenga disponibilidad en Booking.
+      disponible: item.available !== false,
       rating: typeof item.rating === "number" ? item.rating : null,
       rating_label: item.ratingLabel ?? null,
       reviews_count: typeof item.reviewsCount === "number" ? item.reviewsCount : null,
@@ -274,3 +277,4 @@ export async function GET() {
     }
   });
 }
+
