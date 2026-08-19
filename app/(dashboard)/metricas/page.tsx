@@ -150,7 +150,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   // ===========================
   // KPIs MrPlan: Lead time, ALOS, Cancel rate, Pace, Channel mix
   // ===========================
-  const hace90d = new Date(today.getTime() - 90 * 86400_000).toISOString();
+  // Feedback Juan 10.08: ALOS y antelación deben responder al periodo seleccionado
+  const hace90d = new Date(today.getTime() - lookbackDays * 86400_000).toISOString();
   const hace7d = new Date(today.getTime() - 7 * 86400_000).toISOString();
   const inicioMes = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
   const finMes = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
@@ -159,12 +160,19 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const en60d = new Date(today.getTime() + 60 * 86400_000).toISOString().slice(0, 10);
   const en90d = new Date(today.getTime() + 90 * 86400_000).toISOString().slice(0, 10);
 
-  // Lead time + ALOS: reservas confirmadas últimos 90d
+  // Lead time: reservas CREADAS en el periodo · ALOS: reservas con CHECK-IN en el periodo
   const { data: leadRows } = await supabase
     .from("reservas")
     .select("fecha_in, fecha_out, noches, creado_en, estado_cobro")
     .gte("creado_en", hace90d)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
+  const { data: alosRows } = await supabase
+    .from("reservas")
+    .select("noches")
+    .gte("fecha_in", desde)
+    .lte("fecha_in", hasta)
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const leadTimes = (leadRows ?? [])
     .map((r) => {
@@ -175,7 +183,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .filter((d) => d >= 0 && d <= 365);
   const leadTimeMedio = leadTimes.length > 0 ? leadTimes.reduce((a, b) => a + b, 0) / leadTimes.length : 0;
   // ALOS — Average Length of Stay (basado en col 'noches' que ya tenemos)
-  const nochesArr = (leadRows ?? []).map((r) => Number(r.noches ?? 0)).filter((n) => n > 0);
+  const nochesArr = (alosRows ?? []).map((r) => Number(r.noches ?? 0)).filter((n) => n > 0);
   const alosMedio = nochesArr.length > 0 ? nochesArr.reduce((a, b) => a + b, 0) / nochesArr.length : 0;
 
   // Cancel rate: este mes natural
@@ -692,3 +700,4 @@ async function VisitasWebGA4() {
     </div>
   );
 }
+
