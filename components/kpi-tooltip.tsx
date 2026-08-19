@@ -29,7 +29,12 @@ export function KPITooltip({ mide, calculo, origen, sistemas }: KPITooltipProps)
       let left = rect.left + rect.width / 2 - popoverWidth / 2;
       // Mantener dentro de la viewport con un margen 8px
       left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8));
-      const top = rect.bottom + 6;
+      // Feedback Juan 10.08: si no cabe por abajo, abrir hacia ARRIBA (flip)
+      const estimatedHeight = 180;
+      let top = rect.bottom + 6;
+      if (top + estimatedHeight > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - estimatedHeight - 6);
+      }
       setCoords({ top, left });
     } else if (!open) {
       setCoords(null);
@@ -99,4 +104,5 @@ function KPITooltipContent({ mide, calculo, origen, sistemas }: KPITooltipProps)
     </div>
   );
 }
+
 
