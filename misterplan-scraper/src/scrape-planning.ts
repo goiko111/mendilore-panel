@@ -524,7 +524,22 @@ export async function scrapePlanning(
 
   const totalMonths = options.monthsBack + options.monthsAhead;
 
+  // PRESUPUESTO DE TIEMPO — el sync horario tenía timeout de 300s y TODAS las
+  // ejecuciones morían como TIMED-OUT. Ahora paramos limpiamente antes del
+  // límite: lo ya escrapeado queda persistido y el run acaba en SUCCEEDED.
+  const timeoutAtRaw = process.env.ACTOR_TIMEOUT_AT;
+  const timeoutAt = timeoutAtRaw ? new Date(timeoutAtRaw).getTime() : null;
+  const RESERVA_MARGEN_MS = 45_000; // margen para cerrar y hacer el POST final
+  let cortadoPorTiempo = false;
+  const tiempoAgotado = () =>
+    timeoutAt !== null && Date.now() > timeoutAt - RESERVA_MARGEN_MS;
+
   for (let m = 0; m < totalMonths; m++) {
+    if (tiempoAgotado()) {
+      cortadoPorTiempo = true;
+      log.warning(`Presupuesto de tiempo agotado antes del mes ${m + 1}/${totalMonths} — cierre limpio con ${monthsScraped} meses persistidos`);
+      break;
+    }
     log.info(`-- Scraping month ${m + 1}/${totalMonths} --`);
     const reservasBeforeMonth = reservas.length;
     // Esperar a que el planning re-renderice
@@ -540,6 +555,11 @@ export async function scrapePlanning(
     log.info(`Month ${m + 1}: found ${handles.length} reserva elements`);
 
     for (let i = 0; i < handles.length; i++) {
+      if (tiempoAgotado()) {
+        cortadoPorTiempo = true;
+        log.warning(`Presupuesto de tiempo agotado en el mes ${m + 1} tras ${i}/${handles.length} reservas`);
+        break;
+      }
       try {
         const opened = await openReservaModal(frame, i, options.debug);
         if (!opened) {
@@ -578,6 +598,8 @@ export async function scrapePlanning(
       }
     }
 
+    if (cortadoPorTiempo) break;
+
     // Avanzar al siguiente mes (excepto en el último)
     if (m < totalMonths - 1) {
       const ok = await clickNextMonth(frame);
@@ -600,6 +622,7 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
 
 
