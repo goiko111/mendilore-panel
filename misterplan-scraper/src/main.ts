@@ -39,7 +39,7 @@ async function main() {
     password,
     webhookUrl = DEFAULT_WEBHOOK_URL,
     webhookSecret,
-    monthsAhead = 4,
+    monthsAhead = 2, // sync horario: mes actual + siguiente (cabe en el timeout de 300s)
     monthsBack = 0,
     headless = true,
     debug = false,
@@ -169,4 +169,5 @@ main().catch(async (err) => {
   log.exception(err as Error, 'Fatal error in main');
   await Actor.fail((err as Error).message);
 });
+
 
