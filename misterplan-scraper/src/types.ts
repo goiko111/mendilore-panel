@@ -35,6 +35,8 @@ export interface ActorInput {
   monthsBack?: number;
   headless?: boolean;
   debug?: boolean;
+  /** Loguea las líneas con importe del modal cuando no se extrae ningún complementario */
+  debugComplementarios?: boolean;
 }
 
 export interface ReservaScraped {
@@ -87,4 +89,5 @@ export interface ScraperResult {
   errors: ScrapingError[];
   sessionRefreshed: boolean;
 }
+
 
