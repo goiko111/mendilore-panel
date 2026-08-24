@@ -39,7 +39,8 @@ async function main() {
     password,
     webhookUrl = DEFAULT_WEBHOOK_URL,
     webhookSecret,
-    monthsAhead = 2, // sync horario: mes actual + siguiente (cabe en el timeout de 300s)
+    monthsAhead = 1, // sync horario: SOLO el mes actual — con 2 el presupuesto de tiempo lo cortaba siempre
+    debugComplementarios = false,
     monthsBack = 0,
     headless = true,
     debug = false,
@@ -99,6 +100,7 @@ async function main() {
         monthsAhead,
         monthsBack,
         debug,
+        debugComplementarios,
         saveScreenshot: screenshotsStore
           ? async (name, buf) => screenshotsStore.setValue(name, buf, { contentType: 'image/png' })
           : undefined,
@@ -169,5 +171,6 @@ main().catch(async (err) => {
   log.exception(err as Error, 'Fatal error in main');
   await Actor.fail((err as Error).message);
 });
+
 
 
