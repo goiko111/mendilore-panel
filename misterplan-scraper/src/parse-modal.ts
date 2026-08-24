@@ -130,10 +130,21 @@ export async function parseModalReserva(
   // Antes tomábamos solo la primera → faltaban habitaciones (Margarita) y el
   // importe quedaba corto (1030 vs 1131,30 reales). Ahora emitimos una fila
   // por habitación con el importe repartido.
+  // FIX 24/08: las líneas de consumo también dicen "Habitación Margarita", así que
+  // escanear el modal entero inventaba habitaciones que nadie había reservado
+  // (aparecían días con la misma habitación contada dos veces). Recortamos el
+  // texto justo antes del bloque de complementarios para contar solo las reales.
+  const inicioComplementarios = modalText.search(
+    /Otros\s+servicios(?:\s+y\s+descuentos)?|Servicios\s+complementarios|Complementos|Consumos|Extras|Cargos/i,
+  );
+  const textoHabitaciones = inicioComplementarios > 0
+    ? modalText.slice(0, inicioComplementarios)
+    : modalText;
+
   const roomRe = /Habitaci[oó]n\s+([A-Za-záéíóúÁÉÍÓÚñÑ]+)/gi;
   const roomsSeen: Array<{ hab: string; idx: number }> = [];
   let rmm: RegExpExecArray | null;
-  while ((rmm = roomRe.exec(modalText)) !== null) {
+  while ((rmm = roomRe.exec(textoHabitaciones)) !== null) {
     const hab = normalizarHabitacion(rmm[1]);
     if ((HABITACIONES_VALIDAS as string[]).includes(hab) && !roomsSeen.some((u) => u.hab === hab)) {
       roomsSeen.push({ hab, idx: rmm.index });
@@ -303,7 +314,7 @@ export async function parseModalReserva(
 
   // Intentar importe de alojamiento POR habitación: primer importe € tras el nombre
   const perRoomAloja: number[] = rooms.map(({ hab, idx }) => {
-    const seg = modalText.slice(idx, idx + 160);
+    const seg = textoHabitaciones.slice(idx, idx + 160);
     const m = seg.match(/([\d.,]+)\s*€/);
     return m ? parseImporte(m[1]) : 0;
   });
