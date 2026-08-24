@@ -28,6 +28,8 @@ export interface ScrapeOptions {
   monthsAhead: number;
   monthsBack: number;
   debug?: boolean;
+  /** Loguea las líneas con importe del modal cuando no se extrae ningún complementario */
+  debugComplementarios?: boolean;
   /** Callback para guardar screenshots de debugging */
   saveScreenshot?: (name: string, buffer: Buffer) => Promise<void>;
   /** Callback tras cada mes procesado — persiste incremental antes de posible timeout */
@@ -567,7 +569,9 @@ export async function scrapePlanning(
           continue;
         }
 
-        const parsed = await parseModalReserva(frame);
+        const parsed = await parseModalReserva(frame, {
+          debugComplementarios: options.debugComplementarios === true,
+        });
         if (parsed && parsed.length > 0) {
           reservas.push(...parsed);
         } else {
@@ -622,6 +626,7 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
 
 
