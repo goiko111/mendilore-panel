@@ -73,7 +73,10 @@ function splitNombre(s: string): { nombre: string; apellidos: string | null } {
   return { nombre: parts[0], apellidos: parts.slice(1).join(' ') };
 }
 
-export async function parseModalReserva(frame: Frame): Promise<ReservaScraped[] | null> {
+export async function parseModalReserva(
+  frame: Frame,
+  options?: { debugComplementarios?: boolean },
+): Promise<ReservaScraped[] | null> {
   let modalText = '';
   let foundSelector = '';
   for (const sel of MODAL_SELECTORS) {
@@ -160,16 +163,13 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped[] 
   let importe_complementarios = 0;
   const alojaMatch = modalText.match(/(?:Alojamiento|Hospedaje|Habitaci[oó]n)\s+([\d.,]+)\s*€/i);
   if (alojaMatch) importe_alojamiento = parseImporte(alojaMatch[1]);
-  const extrasMatch = modalText.match(/(?:Complementos|Extras|Servicios|Suplementos)\s+([\d.,]+)\s*€/i);
+  const extrasMatch = modalText.match(
+    /(?:Complementos|Complementarios|Extras|Servicios(?:\s+complementarios|\s+adicionales)?|Suplementos|Consumos|Cargos|Otros\s+servicios(?:\s+y\s+descuentos)?)\s*:?\s+([\d.,]+)\s*€/i,
+  );
   if (extrasMatch) importe_complementarios = parseImporte(extrasMatch[1]);
-  // Si solo encontramos uno, derivar el otro
-  if (importe_alojamiento === null && importe_complementarios > 0 && importe_total > 0) {
-    importe_alojamiento = Math.max(0, importe_total - importe_complementarios);
-  }
-  // Si no encontramos nada, alojamiento = total (comportamiento previo migration 0016)
-  if (importe_alojamiento === null) {
-    importe_alojamiento = importe_total;
-  }
+  // NOTA: la reconciliación alojamiento/complementarios se hace MÁS ABAJO,
+  // después de extraer las líneas granulares, porque hasta ahora si el rótulo
+  // agregado no coincidía se dejaba complementarios=0 aunque hubiera líneas.
 
   const pendienteMatch = modalText.match(/Pendiente de cobro\s+([\d.,]+)\s*€/i);
   const pendiente_cobro = pendienteMatch ? parseImporte(pendienteMatch[1]) : 0;
@@ -224,10 +224,15 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped[] 
   //   "Desayuno x 1 Habitación Margarita 0,00 €" (sin fecha si está incluido)
   const complementarios: Array<{ concepto: string; cantidad: number; fecha: string | null; importe: number; raw_text: string }> = [];
   try {
-    // Buscar bloque "Otros servicios y descuentos" (o similar)
-    const bloqueMatch = modalText.match(/Otros servicios y descuentos([\s\S]{0,5000}?)(?:Condiciones|Totales|Ver reserva|$)/i);
-    if (bloqueMatch) {
-      const bloque = bloqueMatch[1];
+    // FIX 24/08: antes exigíamos el rótulo literal "Otros servicios y descuentos".
+    // Si MrPlan usa otro encabezado (o ninguno) no se extraía NADA y los
+    // complementarios quedaban a 0 en todo el panel. Ahora: intentamos el bloque
+    // acotado y, si no aparece, escaneamos el modal entero.
+    const bloqueMatch = modalText.match(
+      /(?:Otros\s+servicios(?:\s+y\s+descuentos)?|Servicios\s+complementarios|Complementos|Consumos|Extras|Cargos)([\s\S]{0,5000}?)(?:Condiciones|Totales|Ver reserva|$)/i,
+    );
+    {
+      const bloque = bloqueMatch ? bloqueMatch[1] : modalText;
       // Regex: CONCEPTO x CANTIDAD [Habitación XXX] [dd/mm/yyyy] IMPORTE €
       const linRe = /([A-ZÁÉÍÓÚÑa-záéíóúñ][A-Za-záéíóúÁÉÍÓÚñÑ0-9\s\-_.]{1,80}?)\s+x\s+(\d+)\s+(?:Habitaci[oó]n\s+(\S+)\s+)?(\d{1,2}\/\d{1,2}\/\d{4})?\s*([\d.,]+)\s*€/g;
       let m: RegExpExecArray | null;
@@ -245,7 +250,10 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped[] 
             fecha = `${parts[2].padStart(4, '20')}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
           }
         }
-        if (concepto && importe >= 0 && concepto.length < 100) {
+        // Descartar filas que en realidad son totales/alojamiento, no consumos
+        const esRuido = /^(?:importe|total|alojamiento|hospedaje|pendiente|anticipo|comisi|precio|subtotal|iva|base)/i
+          .test(concepto);
+        if (concepto && !esRuido && importe >= 0 && concepto.length < 100) {
           complementarios.push({ concepto, cantidad, fecha, importe, raw_text: m[0].slice(0, 200), habitacion: habLinea } as any);
         }
       }
@@ -253,8 +261,41 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped[] 
   } catch (e) {
     log.warning(`Reserva ${id_reserva}: fallo extrayendo complementarios: ${(e as Error).message}`);
   }
+  // === Reconciliación alojamiento / complementarios (tras las líneas) ===
+  const sumaLineas = complementarios.reduce((a, c) => a + c.importe, 0);
+  if (importe_complementarios <= 0 && sumaLineas > 0) {
+    // El rótulo agregado no apareció pero SÍ hay líneas: mandan las líneas.
+    importe_complementarios = Math.round(sumaLineas * 100) / 100;
+  }
+  if (importe_alojamiento === null && importe_complementarios > 0 && importe_total > 0) {
+    importe_alojamiento = Math.max(0, Math.round((importe_total - importe_complementarios) * 100) / 100);
+  }
+  if (importe_alojamiento === null) {
+    importe_alojamiento = importe_total;
+  }
+  // Último recurso: si el alojamiento leído es MENOR que el total y no hay
+  // complementarios, la diferencia son consumos que no supimos etiquetar.
+  if (
+    importe_complementarios <= 0 &&
+    importe_total > 0 &&
+    importe_alojamiento !== null &&
+    importe_total - importe_alojamiento > 0.01
+  ) {
+    importe_complementarios = Math.round((importe_total - importe_alojamiento) * 100) / 100;
+  }
+
   if (complementarios.length > 0) {
-    log.info(`Reserva ${id_reserva}: ${complementarios.length} líneas de complementarios extraídas`);
+    log.info(`Reserva ${id_reserva}: ${complementarios.length} líneas de complementarios (${importe_complementarios} €)`);
+  } else if (importe_complementarios > 0) {
+    log.info(`Reserva ${id_reserva}: complementarios ${importe_complementarios} € sin desglose por línea`);
+  } else if (options?.debugComplementarios) {
+    // Diagnóstico acotado: solo las líneas con importe, sin datos personales.
+    const money = modalText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => /[\d.,]+\s*€/.test(l) && !/@/.test(l))
+      .slice(0, 25);
+    log.warning(`Reserva ${id_reserva}: SIN complementarios · líneas con importe detectadas: ${JSON.stringify(money)}`);
   }
 
   // === Construcción: una fila por habitación con importes repartidos ===
@@ -326,6 +367,7 @@ export async function parseModalReserva(frame: Frame): Promise<ReservaScraped[] 
 
   return out;
 }
+
 
 
 
