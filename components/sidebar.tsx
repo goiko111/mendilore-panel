@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 // Menú simplificado tras revisión Juan: 6 items en navegación.
 // Pantallas ocultas pero accesibles vía URL directa:
 // /calendario · /tareas · /notificaciones · /objetivos · /datos-disponibles · /partes-policia
-const items = [
+const items: { href: string; label: string; icon: any; badge?: string | number }[] = [
   { href: "/dashboard", label: "Resumen", icon: LayoutDashboard },
   { href: "/reservas", label: "Reservas", icon: CalendarRange },
   { href: "/huespedes", label: "Huéspedes", icon: Users },
@@ -145,4 +145,5 @@ export function Sidebar({ userEmail, unreadCount = 0 }: { userEmail?: string | n
     </>
   );
 }
+
 
