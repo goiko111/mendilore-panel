@@ -32,7 +32,7 @@ export default async function ConfiguracionPage() {
   // Detectar qué migrations se han aplicado en BD (sesión 12)
   // Cada check es un SELECT mínimo: si tira error la migration no está
   type CheckEstado = { aplicada: boolean; nota?: string };
-  async function checkMig(testFn: () => Promise<any>): Promise<CheckEstado> {
+  async function checkMig(testFn: () => PromiseLike<any>): Promise<CheckEstado> {
     try {
       const r = await testFn();
       if (r.error) return { aplicada: false, nota: r.error.message?.slice(0, 80) };
@@ -223,3 +223,4 @@ export default async function ConfiguracionPage() {
     </div>
   );
 }
+
