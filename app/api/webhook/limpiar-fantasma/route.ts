@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const desde: string = body.desde || "2025-06-01";
   const hasta: string = body.hasta || "2026-12-31";
   const ejecutar: boolean = body.ejecutar === true;    // sin esto, dry-run
-  const maxBorrado: number = Number(body.maxBorrado ?? 60); // tope de seguridad
+  const maxBorrado: number = Number(body.maxBorrado ?? 30); // tope de seguridad
 
   if (!corte) return NextResponse.json({ error: "falta 'corte' (ISO timestamp)" }, { status: 400 });
 
@@ -97,6 +97,20 @@ export async function POST(req: Request) {
 
   if (candidatasEnConflicto.length === 0) {
     return NextResponse.json({ modo: "ejecutado", borradas: 0, nota: "nada que borrar", ...resumen });
+  }
+  // GUARDA FUERTE: si una parte grande del histórico no está refrescada, la
+  // recarga no ha terminado o no cubrió el rango. Borrar aquí destruiría
+  // reservas reales — abortamos. (Sin esta guarda, un dry-run a mitad de
+  // recarga marcaba 452 reservas legítimas como candidatas.)
+  const pct = (activas?.length ?? 0) > 0
+    ? candidatas.length / (activas?.length ?? 1)
+    : 1;
+  if (pct > 0.15) {
+    return NextResponse.json({
+      error: "recarga_incompleta",
+      nota: `El ${Math.round(pct * 100)}% de las reservas no está refrescada tras el corte. Espera a que TERMINE la recarga completa y vuelve a intentarlo.`,
+      ...resumen,
+    }, { status: 409 });
   }
   if (candidatasEnConflicto.length > maxBorrado) {
     return NextResponse.json({
