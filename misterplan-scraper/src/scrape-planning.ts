@@ -531,7 +531,8 @@ export async function scrapePlanning(
   // límite: lo ya escrapeado queda persistido y el run acaba en SUCCEEDED.
   const timeoutAtRaw = process.env.ACTOR_TIMEOUT_AT;
   const timeoutAt = timeoutAtRaw ? new Date(timeoutAtRaw).getTime() : null;
-  const RESERVA_MARGEN_MS = 45_000; // margen para cerrar y hacer el POST final
+  // 75s: con 45s todavía se colaba algún TIMED-OUT cuando el último modal tardaba
+  const RESERVA_MARGEN_MS = 75_000;
   let cortadoPorTiempo = false;
   const tiempoAgotado = () =>
     timeoutAt !== null && Date.now() > timeoutAt - RESERVA_MARGEN_MS;
@@ -626,6 +627,7 @@ export async function scrapePlanning(
     monthsScraped,
   };
 }
+
 
 
 
