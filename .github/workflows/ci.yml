@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  panel:
+    name: Panel · typecheck + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Guard · runtime edge en rutas de API
+        run: |
+          # Cloudflare Pages exige runtime='edge' en cada route.ts.
+          # Esta comprobación evita repetir el incidente de los 12 commits sin desplegar.
+          missing=0
+          while IFS= read -r f; do
+            grep -q "runtime *= *['\"]edge['\"]" "$f" || { echo "FALTA runtime edge: $f"; missing=1; }
+          done < <(find app -name 'route.ts')
+          exit $missing
+
+  scraper:
+    name: Scraper MisterPlan · typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        working-directory: misterplan-scraper
+        run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Typecheck
+        working-directory: misterplan-scraper
+        run: npx tsc --noEmit -p tsconfig.json
