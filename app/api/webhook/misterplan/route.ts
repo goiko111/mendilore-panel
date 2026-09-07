@@ -124,6 +124,33 @@ export async function POST(request: Request) {
     }
   }
 
+  // ESCALADO DE ERRORES (sep 2026)
+  // Durante meses el CHECK de estado_cobro rechazó toda reserva 'parcial' —
+  // la mitad de cada lote— y este webhook se limitaba a contarlas y devolver
+  // ok:true. Nadie se enteró. Ahora un porcentaje alto de rechazos genera una
+  // alerta explícita y la respuesta deja de ser un OK silencioso.
+  const recibidas = payload.reservas?.length ?? 0;
+  const tasaError = recibidas > 0 ? errores.length / recibidas : 0;
+  const falloGrave = errores.length > 0 && (tasaError >= 0.2 || errores.length >= 10);
+
+  if (falloGrave) {
+    await supabase.from("logs_actividad").insert({
+      evento: "misterplan_sync_error_grave",
+      detalles: {
+        mensaje: `${errores.length} de ${recibidas} reservas rechazadas (${Math.round(tasaError * 100)}%)`,
+        tasa_error: Number(tasaError.toFixed(3)),
+        muestra_errores: errores.slice(0, 10),
+        scraped_at: payload.scrapedAt,
+      },
+    });
+    console.error("[misterplan-webhook] tasa de rechazo alta", {
+      recibidas,
+      errores: errores.length,
+      pct: Math.round(tasaError * 100),
+      muestra: errores.slice(0, 3),
+    });
+  }
+
   // Log resultado
   await supabase.from("logs_actividad").insert({
     evento: errores.length > 0 ? "misterplan_sync_parcial" : "misterplan_sync_ok",
@@ -148,15 +175,22 @@ export async function POST(request: Request) {
     });
   }
 
-  return NextResponse.json({
-    ok: true,
-    recibidas: payload.reservas?.length ?? 0,
-    insertadas,
-    actualizadas,
-    errores: errores.length,
-    errores_scraping: payload.errors?.length ?? 0,
-    primeros_errores: errores.slice(0, 5),
-  });
+  // 207 (Multi-Status) cuando el lote se ha degradado: el scraper lo registra
+  // como aviso en su log en vez de darlo por bueno.
+  return NextResponse.json(
+    {
+      ok: !falloGrave,
+      degradado: falloGrave,
+      recibidas,
+      insertadas,
+      actualizadas,
+      errores: errores.length,
+      tasa_error_pct: Math.round(tasaError * 100),
+      errores_scraping: payload.errors?.length ?? 0,
+      primeros_errores: errores.slice(0, 5),
+    },
+    { status: falloGrave ? 207 : 200 },
+  );
 }
 
 // GET para healthcheck rápido
