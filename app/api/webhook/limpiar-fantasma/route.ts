@@ -91,6 +91,80 @@ export async function POST(req: Request) {
     })),
   };
 
+  // ── MODO "duplicados" ──────────────────────────────────────────────────
+  // Criterio determinista y acotado: si una MISMA habitación aparece dos veces
+  // el MISMO día, una de las dos filas es necesariamente falsa (la casa no
+  // puede alquilar dos veces la misma habitación esa noche). Se conserva la
+  // fila con actualizado_en más reciente y se descarta la vieja.
+  //
+  // Sustituye al criterio "no refrescada = fantasma", que producía falsos
+  // positivos: marcaba reservas reales (p. ej. 1-7189261, cala 7-14 ago,
+  // 1.386 €) simplemente porque el scraper no las había releído.
+  if (body.modo === "duplicados") {
+    const porHabDia = new Map<string, Fila[]>();
+    for (const f of (activas ?? []) as Fila[]) {
+      if (!f.fecha_in || !f.fecha_out || f.fecha_out <= f.fecha_in) continue;
+      for (const d of diasDe(f)) {
+        const k = `${f.habitacion}|${d}`;
+        const arr = porHabDia.get(k) ?? [];
+        arr.push(f);
+        porHabDia.set(k, arr);
+      }
+    }
+
+    const aBorrar = new Map<string, Fila>();
+    const parejas: any[] = [];
+    for (const [k, arr] of porHabDia) {
+      if (arr.length < 2) continue;
+      const orden = [...arr].sort((a, b) => b.actualizado_en.localeCompare(a.actualizado_en));
+      const conservar = orden[0];
+      for (const viejo of orden.slice(1)) {
+        aBorrar.set(viejo.id, viejo);
+        parejas.push({
+          habitacion_dia: k,
+          conservar: { id_externo: conservar.id_externo_misterplan, actualizado_en: conservar.actualizado_en },
+          borrar: { id_externo: viejo.id_externo_misterplan, actualizado_en: viejo.actualizado_en, importe: viejo.importe_total },
+        });
+      }
+    }
+
+    const lista = Array.from(aBorrar.values());
+    const detalle = {
+      modo: ejecutar ? "duplicados_ejecutado" : "duplicados_dry_run",
+      dias_imposibles_antes: antes.length,
+      solapes_detectados: parejas.length,
+      filas_a_borrar: lista.length,
+      parejas: parejas.slice(0, 40),
+      filas: lista.slice(0, 40).map((f) => ({
+        id_externo: f.id_externo_misterplan, habitacion: f.habitacion,
+        fecha_in: f.fecha_in, fecha_out: f.fecha_out,
+        importe: f.importe_total, canal: f.canal, actualizado_en: f.actualizado_en,
+      })),
+    };
+
+    if (!ejecutar) return NextResponse.json(detalle);
+    if (lista.length === 0) return NextResponse.json({ ...detalle, borradas: 0 });
+    if (lista.length > maxBorrado) {
+      return NextResponse.json({ ...detalle, error: "tope_de_seguridad_superado" }, { status: 409 });
+    }
+
+    const { error: eDel } = await s.from("reservas").delete().in("id", lista.map((f) => f.id));
+    if (eDel) return NextResponse.json({ ...detalle, error: eDel.message }, { status: 500 });
+
+    const { data: post } = await s.from("reservas")
+      .select("id,id_externo_misterplan,habitacion,fecha_in,fecha_out,noches,importe_total,actualizado_en,canal")
+      .not("estado_reserva", "in", "(cancelada,no_show)")
+      .in("habitacion", HABS).gt("noches", 0)
+      .gte("fecha_in", desde).lte("fecha_in", hasta).limit(5000);
+    const despues = analizar((post ?? []) as Fila[]);
+    return NextResponse.json({
+      ...detalle,
+      borradas: lista.length,
+      dias_imposibles_despues: despues.length,
+      detalle_dias_despues: despues,
+    });
+  }
+
   if (!ejecutar) {
     return NextResponse.json({ modo: "dry_run", ...resumen });
   }
