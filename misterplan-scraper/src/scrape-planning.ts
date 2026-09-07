@@ -163,6 +163,72 @@ async function navigateMonth(frame: Frame, direction: number): Promise<boolean> 
   return false;
 }
 
+/**
+ * Navega a un mes CONCRETO (año + mes) y VERIFICA que el planning lo muestra.
+ *
+ * Por qué absoluto y no ±1: navigateMonth leía el valor actual del input y le
+ * sumaba un mes. Eso arrastra dos fallos que dejaban meses pasados sin releer:
+ *  · desbordamiento de día (31 de marzo −1 mes = 3 de marzo), y
+ *  · si MrPlan no reescribe el input tras el re-render, el siguiente salto
+ *    parte de un valor viejo y se repite o se salta un mes.
+ * Además antes se devolvía true por el mero hecho de escribir en el input,
+ * sin comprobar que el planning hubiera cambiado de mes.
+ */
+async function goToMonth(frame: Frame, year: number, month1: number): Promise<boolean> {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const objetivo = `${pad(month1)}/${year}`;
+
+  for (let intento = 1; intento <= 3; intento++) {
+    const res = await frame.evaluate((target: { y: number; m: number }) => {
+      const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
+      const dateInput = inputs.find(
+        (i) => i.offsetParent !== null && /^\d{2}\/\d{2}\/\d{4}$/.test(i.value),
+      );
+      if (!dateInput) return { ok: false, reason: 'no visible date input' };
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      // Día 01 siempre: evita cualquier desbordamiento de mes.
+      const nuevo = `01/${pad2(target.m)}/${target.y}`;
+      const anterior = dateInput.value;
+      dateInput.value = nuevo;
+      dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+      dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+      const w: any = window;
+      if (w.jQuery) {
+        try { w.jQuery(dateInput).trigger('change'); w.jQuery(dateInput).change(); } catch {}
+      }
+      dateInput.blur();
+      return { ok: true, anterior, nuevo };
+    }, { y: year, m: month1 });
+
+    if (!(res as any)?.ok) {
+      log.warning(`goToMonth ${objetivo}: ${(res as any)?.reason}`);
+      return false;
+    }
+
+    // Dar tiempo al re-render, creciente en cada reintento
+    await new Promise((r) => setTimeout(r, 1500 * intento));
+
+    // VERIFICAR que el planning está realmente en el mes pedido
+    const verif = await frame.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
+      const di = inputs.find(
+        (i) => i.offsetParent !== null && /^\d{2}\/\d{2}\/\d{4}$/.test(i.value),
+      );
+      return di ? di.value : null;
+    });
+
+    if (typeof verif === 'string') {
+      const [, mm, yyyy] = verif.split('/');
+      if (`${mm}/${yyyy}` === objetivo) {
+        log.info(`Planning en ${objetivo} (intento ${intento})`);
+        return true;
+      }
+      log.warning(`goToMonth ${objetivo}: el planning muestra ${mm}/${yyyy} (intento ${intento})`);
+    }
+  }
+  return false;
+}
+
 async function clickPrevMonth(frame: Frame): Promise<boolean> {
   // Estrategia 1: cambiar el input de fecha (más fiable en MisterPlan TCloudV2)
   const navOk = await navigateMonth(frame, -1);
@@ -513,18 +579,20 @@ export async function scrapePlanning(
   const initialFrame = await getMainFrame(page);
   let frame = await gotoPlanning(page, initialFrame);
 
-  // Rewind a monthsBack si se pidió
-  for (let b = 0; b < options.monthsBack; b++) {
-    const ok = await clickPrevMonth(frame);
-    if (!ok) {
-      log.warning(`Could not click prev month at iteration ${b}`);
-      break;
-    }
-    await new Promise((r) => setTimeout(r, 800));
-    frame = await getMainFrame(page);
+  // Lista ABSOLUTA de meses a recorrer, calculada desde hoy una sola vez.
+  // Antes se retrocedía con N clicks relativos y luego se avanzaba: si un solo
+  // salto fallaba en silencio, el resto del recorrido quedaba desplazado y los
+  // meses pasados no se releían nunca.
+  const hoy = new Date();
+  const objetivos: Array<{ year: number; month1: number }> = [];
+  for (let off = -options.monthsBack; off < options.monthsAhead; off++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() + off, 1);
+    objetivos.push({ year: d.getFullYear(), month1: d.getMonth() + 1 });
   }
-
-  const totalMonths = options.monthsBack + options.monthsAhead;
+  const totalMonths = objetivos.length;
+  log.info(
+    `Meses objetivo (${totalMonths}): ${objetivos.map((o) => `${String(o.month1).padStart(2, '0')}/${o.year}`).join(', ')}`,
+  );
 
   // PRESUPUESTO DE TIEMPO — el sync horario tenía timeout de 300s y TODAS las
   // ejecuciones morían como TIMED-OUT. Ahora paramos limpiamente antes del
@@ -543,10 +611,20 @@ export async function scrapePlanning(
       log.warning(`Presupuesto de tiempo agotado antes del mes ${m + 1}/${totalMonths} — cierre limpio con ${monthsScraped} meses persistidos`);
       break;
     }
-    log.info(`-- Scraping month ${m + 1}/${totalMonths} --`);
+    const objetivo = objetivos[m];
+    const etiquetaMes = `${String(objetivo.month1).padStart(2, '0')}/${objetivo.year}`;
+    log.info(`-- Scraping month ${m + 1}/${totalMonths} (${etiquetaMes}) --`);
     const reservasBeforeMonth = reservas.length;
-    // Esperar a que el planning re-renderice
-    await new Promise((r) => setTimeout(r, 1500));
+
+    frame = await getMainFrame(page);
+    const enMes = await goToMonth(frame, objetivo.year, objetivo.month1);
+    if (!enMes) {
+      // Nunca escrapeamos "el mes que toque estar": o es el correcto o se salta.
+      errors.push({ step: 'goToMonth', error: `no se pudo situar el planning en ${etiquetaMes}`, reservaIndex: m });
+      log.warning(`Saltando ${etiquetaMes}: navegación no verificada`);
+      continue;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
     frame = await getMainFrame(page);
 
     if (options.debug && options.saveScreenshot) {
@@ -604,15 +682,8 @@ export async function scrapePlanning(
     }
 
     if (cortadoPorTiempo) break;
-
-    // Avanzar al siguiente mes (excepto en el último)
-    if (m < totalMonths - 1) {
-      const ok = await clickNextMonth(frame);
-      if (!ok) {
-        errors.push({ step: 'clickNextMonth', error: 'navigation button not found', reservaIndex: m });
-        break;
-      }
-    }
+    // Ya no se avanza de forma relativa: la próxima iteración se sitúa sola
+    // en su mes objetivo con goToMonth().
   }
 
   // Deduplicar por id_reserva + habitación (multi-room: una fila por habitación; cruces de mes)
