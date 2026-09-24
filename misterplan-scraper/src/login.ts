@@ -168,13 +168,24 @@ async function waitForDeviceActivation(
         continue;
       }
 
-      log.info('Opening the device activation link in the requesting browser');
-      await page.goto(activationUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
+      // Keep the page that requested activation open. MisterPlan invalidates
+      // the pending browser authorization if that page is replaced before the
+      // email link is consumed, so the link must open in a sibling tab.
+      log.info('Opening the device activation link in a new tab of the requesting browser');
+      const activationPage = await page.browser().newPage();
+      try {
+        await activationPage.setUserAgent(await page.evaluate(() => navigator.userAgent));
+        const viewport = page.viewport();
+        if (viewport) await activationPage.setViewport(viewport);
+        await activationPage.goto(activationUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
 
-      const activationText = await page.evaluate(() => document.body.innerText);
-      if (/C[oó]digo del error|Ha habido un error/i.test(activationText)) {
-        const errorCode = activationText.match(/C[oó]digo del error\D*(\d+)/i)?.[1] ?? 'unknown';
-        log.warning(`MisterPlan activation page reported an error (code=${errorCode}); verifying the session anyway`);
+        const activationText = await activationPage.evaluate(() => document.body.innerText);
+        if (/C[oó]digo del error|Ha habido un error/i.test(activationText)) {
+          const errorCode = activationText.match(/C[oó]digo del error\D*(\d+)/i)?.[1] ?? 'unknown';
+          log.warning(`MisterPlan activation page reported an error (code=${errorCode}); verifying the session anyway`);
+        }
+      } finally {
+        await activationPage.close().catch(() => null);
       }
 
       await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30_000 });
