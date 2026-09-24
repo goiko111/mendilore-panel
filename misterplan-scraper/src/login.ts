@@ -100,15 +100,20 @@ export async function needsActivation(page: Page): Promise<boolean> {
 async function waitForDeviceActivation(page: Page, timeoutMs = 10 * 60_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
+  const checkIntervalMs = 60_000;
 
   log.warning(`Waiting up to ${Math.round(timeoutMs / 60_000)} minutes for device activation`);
 
   while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    // Reloading the activation response re-submits the login flow and makes
+    // MisterPlan send a new email every time. Keep the page untouched while
+    // the operator opens the one valid link, then check through HOME.
+    const remainingMs = deadline - Date.now();
+    await new Promise((resolve) => setTimeout(resolve, Math.min(checkIntervalMs, remainingMs)));
     attempt += 1;
 
     try {
-      await page.reload({ waitUntil: 'networkidle2', timeout: 30_000 });
+      await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30_000 });
       await waitForPostLoginRender(page, 15_000);
 
       if (await isLoggedIn(page)) {
@@ -116,9 +121,7 @@ async function waitForDeviceActivation(page: Page, timeoutMs = 10 * 60_000): Pro
         return true;
       }
 
-      if (attempt % 3 === 0) {
-        log.info('Still waiting for the MisterPlan activation link');
-      }
+      log.info(`Still waiting for the MisterPlan activation link (check ${attempt})`);
     } catch (err) {
       log.warning(`Activation check failed; retrying: ${(err as Error).message}`);
     }
