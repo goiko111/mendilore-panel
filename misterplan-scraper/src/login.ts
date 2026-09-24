@@ -92,6 +92,41 @@ export async function needsActivation(page: Page): Promise<boolean> {
   }
 }
 
+/**
+ * Mantiene vivo el mismo navegador que solicitó la activación. MisterPlan liga
+ * el enlace del email a esa sesión; si el actor cierra Chrome antes del clic,
+ * el enlace responde con el código 7 y no puede autorizar el dispositivo.
+ */
+async function waitForDeviceActivation(page: Page, timeoutMs = 10 * 60_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+
+  log.warning(`Waiting up to ${Math.round(timeoutMs / 60_000)} minutes for device activation`);
+
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    attempt += 1;
+
+    try {
+      await page.reload({ waitUntil: 'networkidle2', timeout: 30_000 });
+      await waitForPostLoginRender(page, 15_000);
+
+      if (await isLoggedIn(page)) {
+        log.info('Device activation confirmed; continuing in the authenticated session');
+        return true;
+      }
+
+      if (attempt % 3 === 0) {
+        log.info('Still waiting for the MisterPlan activation link');
+      }
+    } catch (err) {
+      log.warning(`Activation check failed; retrying: ${(err as Error).message}`);
+    }
+  }
+
+  return false;
+}
+
 export interface LoginResult {
   success: boolean;
   needsManualActivation: boolean;
@@ -236,9 +271,13 @@ export async function ensureLoggedIn(
   const result = await performLogin(page, username, password);
   if (!result.success) {
     if (result.needsManualActivation) {
+      if (await waitForDeviceActivation(page)) {
+        await saveSession(store, page, true);
+        return { refreshed: true };
+      }
       throw new Error(
-        'MISTERPLAN_DEVICE_NOT_ACTIVATED: ejecuta el actor en local con headless:false ' +
-        'y completa la activación por email. La sesión persistirá en KeyValueStore para runs futuros.'
+        'MISTERPLAN_DEVICE_NOT_ACTIVATED: el enlace no se completó durante los 10 minutos ' +
+        'en que el actor mantuvo abierta la sesión. Ejecuta de nuevo y abre el email inmediatamente.'
       );
     }
     throw new Error(`MISTERPLAN_LOGIN_FAILED: ${result.error}`);

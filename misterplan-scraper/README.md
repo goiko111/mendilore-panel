@@ -79,11 +79,13 @@ MisterPlan tiene "device fingerprint": el primer login desde un navegador nuevo 
 
 **Procedimiento de activación (Goiko, 5 min, una vez):**
 
-1. Ejecutar el actor en Apify con `headless: false` y `debug: true`
-2. En el log verás `Device activation required`
-3. Apify graba la sesión visualmente — abre el video del run
-4. Mientras, abre el email mendilore@mendilore.com → busca email "Activar nuevo dispositivo MisterPlan" → click link
-5. Vuelve a ejecutar el actor (ya activado, las cookies persisten en `KeyValueStore.misterplan-session`)
+1. Ejecutar el actor en Apify.
+2. En el log verás `Device activation required` y el actor mantendrá el mismo
+   navegador abierto durante 10 minutos.
+3. Abrir inmediatamente el email de acceso desde un nuevo dispositivo y pulsar
+   `Activar Dispositivo`.
+4. El mismo run detectará la activación, persistirá las cookies en
+   `KeyValueStore.misterplan-session` y continuará con la extracción.
 
 A partir de ese momento todos los runs siguientes funcionan sin intervención.
 
