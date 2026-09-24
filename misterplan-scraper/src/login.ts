@@ -156,8 +156,8 @@ async function waitForDeviceActivation(
 
       const activationText = await page.evaluate(() => document.body.innerText);
       if (/C[oó]digo del error|Ha habido un error/i.test(activationText)) {
-        log.warning('MisterPlan rejected the device activation link');
-        continue;
+        const errorCode = activationText.match(/C[oó]digo del error\D*(\d+)/i)?.[1] ?? 'unknown';
+        log.warning(`MisterPlan activation page reported an error (code=${errorCode}); verifying the session anyway`);
       }
 
       await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30_000 });
