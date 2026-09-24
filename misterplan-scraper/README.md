@@ -82,8 +82,10 @@ MisterPlan tiene "device fingerprint": el primer login desde un navegador nuevo 
 1. Ejecutar el actor en Apify.
 2. En el log verás `Device activation required` y el actor mantendrá el mismo
    navegador abierto durante 10 minutos.
-3. Abrir inmediatamente el email de acceso desde un nuevo dispositivo y pulsar
-   `Activar Dispositivo`.
+3. Copiar la URL de `Activar Dispositivo` del email y guardarla como el registro
+   `device-activation-url` del KeyValueStore `misterplan-session`. El actor la
+   consume y elimina inmediatamente para abrirla dentro del navegador que pidió
+   la validación; abrir el enlace en otro equipo devuelve el código 7.
 4. El mismo run detectará la activación, persistirá las cookies en
    `KeyValueStore.misterplan-session` y continuará con la extracción.
 

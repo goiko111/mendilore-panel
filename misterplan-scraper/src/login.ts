@@ -97,31 +97,72 @@ export async function needsActivation(page: Page): Promise<boolean> {
  * el enlace del email a esa sesión; si el actor cierra Chrome antes del clic,
  * el enlace responde con el código 7 y no puede autorizar el dispositivo.
  */
-async function waitForDeviceActivation(page: Page, timeoutMs = 10 * 60_000): Promise<boolean> {
+const DEVICE_ACTIVATION_URL_KEY = 'device-activation-url';
+
+function isAllowedActivationUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      url.hostname === 'mrplan.io' &&
+      url.pathname === '/experiencias/modulos/TBrowserAuth/lib/linkBrowserAuth.php'
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function waitForDeviceActivation(
+  page: Page,
+  store: KeyValueStore,
+  timeoutMs = 10 * 60_000
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   let attempt = 0;
-  const checkIntervalMs = 60_000;
+  const checkIntervalMs = 5_000;
 
   log.warning(`Waiting up to ${Math.round(timeoutMs / 60_000)} minutes for device activation`);
 
   while (Date.now() < deadline) {
-    // Reloading the activation response re-submits the login flow and makes
-    // MisterPlan send a new email every time. Keep the page untouched while
-    // the operator opens the one valid link, then check through HOME.
     const remainingMs = deadline - Date.now();
     await new Promise((resolve) => setTimeout(resolve, Math.min(checkIntervalMs, remainingMs)));
     attempt += 1;
 
     try {
+      const activationUrl = await store.getValue<string>(DEVICE_ACTIVATION_URL_KEY);
+      if (!activationUrl) {
+        if (attempt % 12 === 0) {
+          log.info(`Still waiting for the MisterPlan activation link (${Math.round(attempt * checkIntervalMs / 60_000)} min)`);
+        }
+        continue;
+      }
+
+      // Consume the one-time link before navigating so it is never retried or
+      // left in the store. Never log the URL because it contains a token.
+      await store.setValue(DEVICE_ACTIVATION_URL_KEY, null);
+      if (!isAllowedActivationUrl(activationUrl)) {
+        log.warning('Ignored an invalid device activation URL');
+        continue;
+      }
+
+      log.info('Opening the device activation link in the requesting browser');
+      await page.goto(activationUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
+
+      const activationText = await page.evaluate(() => document.body.innerText);
+      if (/C[oó]digo del error|Ha habido un error/i.test(activationText)) {
+        log.warning('MisterPlan rejected the device activation link');
+        continue;
+      }
+
       await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30_000 });
-      await waitForPostLoginRender(page, 15_000);
+      await waitForPostLoginRender(page, 20_000);
 
       if (await isLoggedIn(page)) {
         log.info('Device activation confirmed; continuing in the authenticated session');
         return true;
       }
 
-      log.info(`Still waiting for the MisterPlan activation link (check ${attempt})`);
+      log.warning('Activation link opened, but MisterPlan did not create an authenticated session');
     } catch (err) {
       log.warning(`Activation check failed; retrying: ${(err as Error).message}`);
     }
@@ -271,10 +312,12 @@ export async function ensureLoggedIn(
   }
 
   // Login fresh
+  // A previous one-time link must never be reused for a fresh login attempt.
+  await store.setValue(DEVICE_ACTIVATION_URL_KEY, null);
   const result = await performLogin(page, username, password);
   if (!result.success) {
     if (result.needsManualActivation) {
-      if (await waitForDeviceActivation(page)) {
+      if (await waitForDeviceActivation(page, store)) {
         await saveSession(store, page, true);
         return { refreshed: true };
       }
