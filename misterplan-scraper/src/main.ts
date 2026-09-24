@@ -60,6 +60,16 @@ async function main() {
   let reservas: ReservaScraped[] = [];
   let sessionRefreshed = false;
 
+  // MisterPlan rechaza la activación de dispositivos desde IPs de centros de
+  // datos (código 7). En Apify usamos una salida residencial española para
+  // que el navegador programado se comporte como un dispositivo normal.
+  const proxyConfiguration = await Actor.createProxyConfiguration({
+    groups: ['RESIDENTIAL'],
+    countryCode: 'ES',
+  });
+  const proxyUrl = await proxyConfiguration?.newUrl();
+  const parsedProxy = proxyUrl ? new URL(proxyUrl) : null;
+
   // Chrome path: Apify image lo tiene en /usr/bin/google-chrome, también respeta APIFY_CHROME_EXECUTABLE_PATH y PUPPETEER_EXECUTABLE_PATH
   const chromePath =
     process.env.APIFY_CHROME_EXECUTABLE_PATH ||
@@ -75,11 +85,19 @@ async function main() {
       '--disable-setuid-sandbox',
       '--disable-blink-features=AutomationControlled',
       '--disable-dev-shm-usage',
+      ...(parsedProxy ? [`--proxy-server=${parsedProxy.protocol}//${parsedProxy.host}`] : []),
     ],
   });
 
   try {
     const page = await browser.newPage();
+    if (parsedProxy) {
+      await page.authenticate({
+        username: decodeURIComponent(parsedProxy.username),
+        password: decodeURIComponent(parsedProxy.password),
+      });
+      log.info('Using Apify residential proxy in Spain');
+    }
     await page.setViewport({ width: 1440, height: 900 });
 
     // Login (o restore)
@@ -171,6 +189,5 @@ main().catch(async (err) => {
   log.exception(err as Error, 'Fatal error in main');
   await Actor.fail((err as Error).message);
 });
-
 
 
