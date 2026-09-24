@@ -129,6 +129,23 @@ async function waitForDeviceActivation(
     attempt += 1;
 
     try {
+      // Residential proxy sessions can be reassigned after a quiet period. A
+      // small same-origin request keeps the exact browser/proxy path that asked
+      // MisterPlan for activation alive while the email is being delivered.
+      if (attempt % 3 === 0) {
+        await page.evaluate(async () => {
+          try {
+            await fetch(`/favicon.ico?activation_keepalive=${Date.now()}`, {
+              cache: 'no-store',
+              credentials: 'include',
+            });
+          } catch {
+            // The activation page remains authoritative; keepalive failures are
+            // harmless and must not interrupt polling the KVS.
+          }
+        });
+      }
+
       const rawActivationUrl = await store.getValue<string | Buffer>(DEVICE_ACTIVATION_URL_KEY);
       const activationUrl =
         typeof rawActivationUrl === 'string'
