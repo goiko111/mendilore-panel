@@ -67,7 +67,7 @@ async function main() {
     groups: ['RESIDENTIAL'],
     countryCode: 'ES',
   });
-  const proxyUrl = await proxyConfiguration?.newUrl();
+  const proxyUrl = await proxyConfiguration?.newUrl('mendilore-misterplan');
   const parsedProxy = proxyUrl ? new URL(proxyUrl) : null;
 
   // Chrome path: Apify image lo tiene en /usr/bin/google-chrome, también respeta APIFY_CHROME_EXECUTABLE_PATH y PUPPETEER_EXECUTABLE_PATH
@@ -189,5 +189,4 @@ main().catch(async (err) => {
   log.exception(err as Error, 'Fatal error in main');
   await Actor.fail((err as Error).message);
 });
-
 
