@@ -129,7 +129,13 @@ async function waitForDeviceActivation(
     attempt += 1;
 
     try {
-      const activationUrl = await store.getValue<string>(DEVICE_ACTIVATION_URL_KEY);
+      const rawActivationUrl = await store.getValue<string | Buffer>(DEVICE_ACTIVATION_URL_KEY);
+      const activationUrl =
+        typeof rawActivationUrl === 'string'
+          ? rawActivationUrl.trim()
+          : Buffer.isBuffer(rawActivationUrl)
+            ? rawActivationUrl.toString('utf8').trim()
+            : '';
       if (!activationUrl) {
         if (attempt % 12 === 0) {
           log.info(`Still waiting for the MisterPlan activation link (${Math.round(attempt * checkIntervalMs / 60_000)} min)`);
