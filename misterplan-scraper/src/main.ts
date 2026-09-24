@@ -69,6 +69,12 @@ async function main() {
   });
   const proxyUrl = await proxyConfiguration?.newUrl('mendilore_misterplan');
   const parsedProxy = proxyUrl ? new URL(proxyUrl) : null;
+  const proxyCredentials = parsedProxy
+    ? {
+        username: decodeURIComponent(parsedProxy.username),
+        password: decodeURIComponent(parsedProxy.password),
+      }
+    : undefined;
 
   // Chrome path: Apify image lo tiene en /usr/bin/google-chrome, también respeta APIFY_CHROME_EXECUTABLE_PATH y PUPPETEER_EXECUTABLE_PATH
   const chromePath =
@@ -91,18 +97,15 @@ async function main() {
 
   try {
     const page = await browser.newPage();
-    if (parsedProxy) {
-      await page.authenticate({
-        username: decodeURIComponent(parsedProxy.username),
-        password: decodeURIComponent(parsedProxy.password),
-      });
+    if (proxyCredentials) {
+      await page.authenticate(proxyCredentials);
       log.info('Using Apify residential proxy in Spain');
     }
     await page.setViewport({ width: 1440, height: 900 });
 
     // Login (o restore)
     try {
-      const result = await ensureLoggedIn(page, username, password, sessionStore);
+      const result = await ensureLoggedIn(page, username, password, sessionStore, proxyCredentials);
       sessionRefreshed = result.refreshed;
     } catch (err) {
       log.error(`Login failed: ${(err as Error).message}`);

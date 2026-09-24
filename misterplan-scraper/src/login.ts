@@ -115,6 +115,7 @@ function isAllowedActivationUrl(value: string): boolean {
 async function waitForDeviceActivation(
   page: Page,
   store: KeyValueStore,
+  proxyCredentials?: { username: string; password: string },
   timeoutMs = 10 * 60_000
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
@@ -174,6 +175,7 @@ async function waitForDeviceActivation(
       log.info('Opening the device activation link in a new tab of the requesting browser');
       const activationPage = await page.browser().newPage();
       try {
+        if (proxyCredentials) await activationPage.authenticate(proxyCredentials);
         await activationPage.setUserAgent(await page.evaluate(() => navigator.userAgent));
         const viewport = page.viewport();
         if (viewport) await activationPage.setViewport(viewport);
@@ -330,7 +332,8 @@ export async function ensureLoggedIn(
   page: Page,
   username: string,
   password: string,
-  store: KeyValueStore
+  store: KeyValueStore,
+  proxyCredentials?: { username: string; password: string }
 ): Promise<{ refreshed: boolean }> {
   const session = await loadSession(store);
   await applySession(page, session);
@@ -351,7 +354,7 @@ export async function ensureLoggedIn(
   const result = await performLogin(page, username, password);
   if (!result.success) {
     if (result.needsManualActivation) {
-      if (await waitForDeviceActivation(page, store)) {
+      if (await waitForDeviceActivation(page, store, proxyCredentials)) {
         await saveSession(store, page, true);
         return { refreshed: true };
       }
