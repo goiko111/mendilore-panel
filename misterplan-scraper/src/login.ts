@@ -173,12 +173,36 @@ async function waitForDeviceActivation(
       // the pending browser authorization if that page is replaced before the
       // email link is consumed, so the link must open in a sibling tab.
       log.info('Opening the device activation link in a new tab of the requesting browser');
+      const requestingIp = await page.evaluate(async () => {
+        try {
+          const response = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+          return ((await response.json()) as { ip?: string }).ip ?? null;
+        } catch {
+          return null;
+        }
+      });
       const activationPage = await page.browser().newPage();
       try {
         if (proxyCredentials) await activationPage.authenticate(proxyCredentials);
         await activationPage.setUserAgent(await page.evaluate(() => navigator.userAgent));
         const viewport = page.viewport();
         if (viewport) await activationPage.setViewport(viewport);
+        await activationPage.goto('https://api.ipify.org?format=json', {
+          waitUntil: 'networkidle2',
+          timeout: 15_000,
+        });
+        const activationIp = await activationPage.evaluate(() => {
+          try {
+            return (JSON.parse(document.body.innerText) as { ip?: string }).ip ?? null;
+          } catch {
+            return null;
+          }
+        });
+        log.info(
+          `Activation proxy continuity: ${requestingIp && activationIp
+            ? requestingIp === activationIp ? 'same IP' : 'IP changed'
+            : 'unverified'}`
+        );
         await activationPage.goto(activationUrl, { waitUntil: 'networkidle2', timeout: 30_000 });
 
         const activationText = await activationPage.evaluate(() => document.body.innerText);
