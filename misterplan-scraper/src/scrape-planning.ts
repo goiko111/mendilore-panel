@@ -350,10 +350,38 @@ const MODAL_SELECTOR_CSS = [
   '.ui-dialog',
 ].join(', ');
 
-async function openReservaModal(frame: Frame, idx: number, debug = false): Promise<boolean> {
+/**
+ * Busca el modal visible en TODOS los frames de la página.
+ *
+ * MisterPlan renderiza el planning dentro de un iframe, pero el diagnóstico de
+ * oct 2026 mostró que tras pulsar "Abrir Reserva" no aparece nada en ese frame
+ * — aunque en el DOM existen 9 elementos .modal ocultos. La ficha se abre en
+ * otro frame. Antes solo mirábamos uno y dábamos el modal por no abierto.
+ */
+async function buscarFrameConModal(page: Page, timeoutMs = 4000): Promise<Frame | null> {
+  const hasta = Date.now() + timeoutMs;
+  while (Date.now() < hasta) {
+    for (const f of page.frames()) {
+      try {
+        const visible = await f.evaluate((sel: string) => {
+          const els = Array.from(document.querySelectorAll(sel)) as HTMLElement[];
+          return els.some((el) => {
+            const r = el.getBoundingClientRect();
+            return el.offsetParent !== null && r.width > 150 && r.height > 100;
+          });
+        }, MODAL_SELECTOR_CSS);
+        if (visible) return f;
+      } catch { /* frame detached o cross-origin */ }
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+}
+
+async function openReservaModal(frame: Frame, idx: number, debug = false): Promise<Frame | null> {
   // Re-fetch handles cada vez para evitar handles obsoletos tras mutaciones del DOM
   const handles = await getReservaHandles(frame);
-  if (idx >= handles.length) return false;
+  if (idx >= handles.length) return null;
   const handle = handles[idx];
 
   try {
@@ -428,7 +456,7 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
             } catch (e: any) { log.warning(`dump fail: ${e.message}`); }
           }
         }
-        return true;
+        return frame;
       }
     }
 
@@ -475,7 +503,7 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
             } catch (e: any) { log.warning(`dump fail: ${e.message}`); }
           }
         }
-        return true;
+        return frame;
       }
     }
 
@@ -486,7 +514,19 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
         const found = await page.waitForSelector(MODAL_SELECTOR_CSS, { visible: true, timeout: 1500 }).catch(() => null);
         if (found) {
           if (debug) log.info(`Modal opened at page-level · idx=${idx}`);
-          return true;
+          return frame;
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Estrategia 4: barrer TODOS los frames — la ficha puede abrirse en otro
+    try {
+      const page4: Page | null = (frame as any).page ? (frame as any).page() : null;
+      if (page4) {
+        const f = await buscarFrameConModal(page4, 4000);
+        if (f) {
+          if (debug) log.info(`Modal encontrado en otro frame · idx=${idx}`);
+          return f;
         }
       }
     } catch { /* ignore */ }
@@ -535,10 +575,10 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
         }
       } catch { /* ignore */ }
     }
-    return false;
+    return null;
   } catch (err) {
     log.warning(`openReservaModal idx ${idx} failed: ${(err as Error).message}`);
-    return false;
+    return null;
   }
 }
 
@@ -693,9 +733,10 @@ export async function scrapePlanning(
         log.warning(`Presupuesto de tiempo agotado en el mes ${m + 1} tras ${i}/${handles.length} reservas`);
         break;
       }
+      let modalFrame: Frame | null = null;
       try {
-        const opened = await openReservaModal(frame, i, options.debug);
-        if (!opened) {
+        modalFrame = await openReservaModal(frame, i, options.debug);
+        if (!modalFrame) {
           errors.push({ step: 'openModal', error: 'modal not visible', reservaIndex: i });
           fallosModalSeguidos++;
           // Si ninguna ficha abre, MisterPlan ha cambiado el planning. Seguir
@@ -714,7 +755,7 @@ export async function scrapePlanning(
         }
 
         fallosModalSeguidos = 0;
-        const parsed = await parseModalReserva(frame, {
+        const parsed = await parseModalReserva(modalFrame, {
           debugComplementarios: options.debugComplementarios === true,
         });
         if (parsed && parsed.length > 0) {
@@ -729,7 +770,7 @@ export async function scrapePlanning(
           reservaIndex: i,
         });
       } finally {
-        await closeModal(frame);
+        await closeModal(modalFrame ?? frame);
         await new Promise((r) => setTimeout(r, 300));
       }
     }
