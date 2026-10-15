@@ -321,6 +321,11 @@ async function getReservaRefs(frame: Frame): Promise<ReservaRef[]> {
       const els = Array.from(document.querySelectorAll('div.reserva')) as HTMLElement[];
       for (const el of els) {
         if (/bloqueo_fantasma/i.test(el.id)) continue;          // clon de MisterPlan
+        // Los cierres y bloqueos de disponibilidad también son `.reserva`,
+        // pero NO tienen ficha: al seleccionarlos la barra inferior ofrece
+        // "Borrar Bloqueos", no "Abrir Reserva". Las reservas reales llevan
+        // `.final`; los bloqueos, `.bloqueo`.
+        if (!el.classList.contains('final') || el.classList.contains('bloqueo')) continue;
         if (el.closest('.modal, .modal-dialog, [role="dialog"]')) continue;
         const r = el.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) continue;
@@ -401,14 +406,39 @@ async function openReservaModal(
     } catch { /* ignore */ }
 
     // 1) UN solo clic: selecciona la reserva y despliega la barra inferior.
-    await handle.click({ delay: 40 });
+    //    Hay que CONFIRMAR que la selección ha cambiado. La barra
+    //    `#abrir_reserva` no se vacía entre fichas: conserva el tamaño de la
+    //    selección anterior, así que `waitForSelector(visible)` daba positivo
+    //    aunque el clic no hubiera entrado, y acto seguido pulsábamos un botón
+    //    que ya no apuntaba a nada. La reserva seleccionada lleva la clase
+    //    `seleccionada_principal`.
+    let seleccionada = false;
+    for (let intento = 0; intento < 3 && !seleccionada; intento++) {
+      try {
+        await handle.click({ delay: 40 });
+      } catch { /* reintento */ }
+      seleccionada = !!(await frame
+        .waitForFunction(
+          (id: string) => {
+            const sel = document.querySelector('.reserva.seleccionada_principal');
+            return !!sel && sel.getAttribute('id_reserva') === id;
+          },
+          { timeout: 2000 },
+          ref.idReserva,
+        )
+        .catch(() => null));
+    }
+    if (!seleccionada) {
+      if (debug) log.warning(`Reserva ${ref.idReserva}: el clic no llegó a seleccionarla`);
+      return null;
+    }
 
     // 2) Botón "Abrir Reserva".
     const btn = await frame
       .waitForSelector(ABRIR_SELECTOR, { visible: true, timeout: 4000 })
       .catch(() => null);
     if (!btn) {
-      if (debug) log.warning(`Reserva ${ref.idReserva}: la barra "Abrir Reserva" no apareció tras el clic`);
+      if (debug) log.warning(`Reserva ${ref.idReserva}: la barra "Abrir Reserva" no apareció tras seleccionarla`);
       return null;
     }
     await btn.click({ delay: 60 });
