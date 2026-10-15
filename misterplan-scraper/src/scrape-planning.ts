@@ -401,7 +401,7 @@ async function openReservaModal(
     }
 
     try {
-      await handle.evaluate((el: any) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      await handle.evaluate((el: any) => el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' }));
       await new Promise((r) => setTimeout(r, 150));
     } catch { /* ignore */ }
 
@@ -415,7 +415,15 @@ async function openReservaModal(
     let seleccionada = false;
     for (let intento = 0; intento < 3 && !seleccionada; intento++) {
       try {
-        await handle.click({ delay: 40 });
+        if (intento === 0) {
+          await handle.click({ delay: 40 });
+        } else {
+          // Reintento: clic sintético. El planning engancha la selección con
+          // un handler delegado de jQuery, que sí responde a `el.click()`,
+          // y así no dependemos de que el ratón acierte en una barra de
+          // pocos píxeles o medio salida del scroll horizontal.
+          await handle.evaluate((el: any) => el.click());
+        }
       } catch { /* reintento */ }
       seleccionada = !!(await frame
         .waitForFunction(
@@ -489,12 +497,18 @@ async function openReservaModal(
  * el body limpio, y la ficha siguiente abre sin problema.
  */
 async function closeModal(frame: Frame): Promise<void> {
-  try {
-    const btn = await frame.$(
-      '#modalCentral button[data-dismiss="modal"], #modalCentral button[data-bs-dismiss="modal"]',
-    );
-    if (btn) await btn.click({ delay: 30 });
-  } catch { /* se intenta por jQuery abajo */ }
+  // El aspa de cierre es un botón pequeño del header, arrastrable y a veces
+  // tapado. El clic con ratón fallaba en todas las fichas y nos costaba ocho
+  // segundos de espera cada una. Bootstrap resuelve el cierre con un handler
+  // delegado, así que un `el.click()` sirve igual.
+  await frame
+    .evaluate(() => {
+      const b = document.querySelector(
+        '#modalCentral button[data-dismiss="modal"], #modalCentral button[data-bs-dismiss="modal"]',
+      ) as HTMLElement | null;
+      if (b) b.click();
+    })
+    .catch(() => null);
 
   const cerrado = await frame
     .waitForFunction(
@@ -503,7 +517,7 @@ async function closeModal(frame: Frame): Promise<void> {
         if (!m) return true;
         return !m.classList.contains('show') && getComputedStyle(m).display === 'none';
       },
-      { timeout: 5000 },
+      { timeout: 3000 },
     )
     .catch(() => null);
   if (cerrado) return;
