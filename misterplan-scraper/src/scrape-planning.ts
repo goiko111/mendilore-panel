@@ -464,18 +464,41 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
     await handles[idx].click({ delay: 50 });
     await new Promise((r) => setTimeout(r, 400));
 
-    const openClicked = await frame.evaluate(() => {
-      const candidates = Array.from(document.querySelectorAll('a, button, li, div, span'));
-      for (const el of candidates) {
-        const txt = (el.textContent || '').trim();
-        if (/^(Abrir Reserva|Ver detalle|Editar Reserva|Ver Reserva|Detalle Reserva)$/i.test(txt)) {
-          (el as HTMLElement).click();
-          return { found: true, text: txt };
+    // Clic REAL sobre "Abrir Reserva".
+    // Antes se hacía `el.click()` dentro de un evaluate: eso es un clic
+    // sintético (isTrusted=false) y MisterPlan no lo procesa — el log decía
+    // "Clicked open button: Abrir Reserva" y acto seguido "Modal didn't
+    // appear". Ahora se obtiene el ElementHandle y se pulsa con el ratón de
+    // Puppeteer, que sí genera un evento de confianza.
+    let abrirPulsado = false;
+    try {
+      const btnHandle = await frame.evaluateHandle(() => {
+        const candidates = Array.from(document.querySelectorAll('a, button, li, div, span'));
+        for (const el of candidates) {
+          const txt = (el.textContent || '').trim();
+          if (/^(Abrir Reserva|Ver detalle|Editar Reserva|Ver Reserva|Detalle Reserva)$/i.test(txt)) {
+            const r = (el as HTMLElement).getBoundingClientRect();
+            if ((el as HTMLElement).offsetParent !== null && r.width > 0 && r.height > 0) return el;
+          }
         }
+        return null;
+      });
+      const btn = btnHandle.asElement();
+      if (btn) {
+        try {
+          await (btn as any).evaluate((el: any) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
+        } catch { /* ignore */ }
+        await (btn as any).click({ delay: 60 });
+        abrirPulsado = true;
+        if (debug) log.info('Clic REAL sobre "Abrir Reserva"');
+      } else if (debug) {
+        log.info('No se encontró un botón "Abrir Reserva" visible');
       }
-      return { found: false };
-    }).catch(() => ({ found: false }));
-    if (debug && (openClicked as any).found) log.info(`Clicked open button: ${(openClicked as any).text}`);
+      await btnHandle.dispose().catch(() => undefined);
+    } catch (e: any) {
+      if (debug) log.warning(`Clic sobre Abrir Reserva falló: ${e.message}`);
+    }
+    if (abrirPulsado) await new Promise((r) => setTimeout(r, 900));
 
     {
       const sel = MODAL_SELECTOR_CSS;
