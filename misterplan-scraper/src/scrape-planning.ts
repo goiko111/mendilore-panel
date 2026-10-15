@@ -491,6 +491,37 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
       }
     } catch { /* ignore */ }
 
+    // DIAGNÓSTICO: ¿qué aparece realmente tras pulsar "Abrir Reserva"?
+    // Las capturas al KeyValueStore no estaban llegando, así que lo volcamos
+    // al log, que sí se puede leer desde el panel.
+    if (idx < 2) {
+      try {
+        const pista = await frame.evaluate(() => {
+          const vis = (el: Element) => {
+            const r = (el as HTMLElement).getBoundingClientRect();
+            return r.width > 200 && r.height > 150 && (el as HTMLElement).offsetParent !== null;
+          };
+          const grandes = Array.from(document.querySelectorAll('div,section,form,dialog,aside'))
+            .filter(vis)
+            .slice(-12)
+            .map((el) => ({
+              tag: el.tagName.toLowerCase(),
+              id: (el as HTMLElement).id || null,
+              cls: ((el as HTMLElement).className || '').toString().slice(0, 90),
+            }));
+          return {
+            url: location.href,
+            iframes: document.querySelectorAll('iframe').length,
+            dialogs: document.querySelectorAll('[role=dialog],dialog,.modal').length,
+            grandes,
+          };
+        });
+        log.warning(`DIAG_MODAL idx=${idx}: ${JSON.stringify(pista).slice(0, 1200)}`);
+      } catch (e: any) {
+        log.warning(`DIAG_MODAL falló: ${e.message}`);
+      }
+    }
+
     if (debug) {
       log.warning(`Modal didn't appear for reserva idx ${idx}`);
       // Guardar screenshot del estado actual para debug
