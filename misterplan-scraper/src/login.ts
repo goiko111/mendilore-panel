@@ -35,12 +35,63 @@ export async function loadSession(store: KeyValueStore): Promise<SessionState> {
   return { cookies, userAgent, lastActivated };
 }
 
+/** Dominios donde MisterPlan deja la cookie de sesión. */
+const SESSION_ORIGINS = [
+  'https://www.mrplan.es',
+  'https://mrplan.es',
+  'https://cloud.ruralgest.net',
+];
+
 export async function saveSession(store: KeyValueStore, page: Page, activated = false) {
-  const cookies = await page.cookies();
+  // FIX oct 2026: `page.cookies()` sin argumentos solo devuelve las cookies del
+  // URL actual, y está deprecada en Puppeteer 23. Tras el login la sesión vive
+  // en www.mrplan.es, pero la página puede estar en otra ruta — y devolvía
+  // CERO cookies ("Session saved: 0 cookies"). Resultado: la sesión no se
+  // persistía nunca y cada ejecución volvía a toparse con la activación de
+  // dispositivo de MisterPlan.
+  let cookies: any[] = [];
+
+  // 1) El contexto del navegador devuelve TODAS las cookies, sin depender del URL.
+  try {
+    const ctx: any = (page as any).browserContext?.();
+    if (ctx && typeof ctx.cookies === 'function') {
+      cookies = await ctx.cookies();
+    }
+  } catch (e) {
+    log.debug(`browserContext.cookies() no disponible: ${(e as Error).message}`);
+  }
+
+  // 2) Respaldo: pedirlas explícitamente por origen.
+  if (!cookies.length) {
+    try {
+      const urls = [...SESSION_ORIGINS];
+      const actual = page.url();
+      if (actual && actual.startsWith('http')) urls.push(actual);
+      cookies = await (page as any).cookies(...urls);
+    } catch (e) {
+      log.debug(`page.cookies(urls) falló: ${(e as Error).message}`);
+    }
+  }
+
+  // 3) Último recurso: comportamiento antiguo.
+  if (!cookies.length) {
+    try { cookies = await page.cookies(); } catch { /* nada más que probar */ }
+  }
+
   await store.setValue('cookies', cookies);
   await store.setValue('user-agent', await page.evaluate(() => navigator.userAgent));
   if (activated) await store.setValue('last-activated', new Date().toISOString());
-  log.info(`Session saved: ${cookies.length} cookies, activated=${activated}`);
+
+  if (cookies.length === 0) {
+    // Guardar cero cookies es un fallo silencioso: el run parece ir bien y el
+    // siguiente vuelve a pedir activación. Que se vea en el log.
+    log.warning(
+      'Session saved con 0 COOKIES — la sesión no persistirá y el próximo run ' +
+      'volverá a pedir activación de dispositivo. Revisar extracción de cookies.',
+    );
+  } else {
+    log.info(`Session saved: ${cookies.length} cookies, activated=${activated}`);
+  }
 }
 
 export async function applySession(page: Page, session: SessionState) {
