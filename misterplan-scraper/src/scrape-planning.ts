@@ -1,17 +1,19 @@
 /**
  * Scraping del Planning de MisterPlan.
  *
- * Estructura (recon D-132):
- *   - Iframe principal con vista funcional
- *   - 32 elementos `.reserva` visibles sin scroll (resto via scroll horizontal)
- *   - Header con botones `< Mes anterior` `Mes actual` `> Mes siguiente`
- *   - Cada reserva tiene un atributo data-* con el ID o link "Abrir Reserva"
+ * Estructura (verificada en vivo sobre el planning real, 15/10/2026):
+ *   - El planning vive en el DOCUMENTO PRINCIPAL, no en un iframe
+ *   - `div.reserva[id_reserva]`, uno por reserva y por día, más clones
+ *     `_bloqueo_fantasma_N` en las filas de las demás habitaciones
+ *   - Un clic selecciona la reserva y despliega la barra `#abrir_reserva`
+ *   - La ficha se pinta en `#modalCentral`, contenedor único y reutilizado
  *
  * Estrategia:
- *   1. Esperar a que el iframe cargue
- *   2. Para cada mes 0..monthsAhead-1: hacer click en `>` para avanzar, scrape
- *   3. Por cada `.reserva`, click → click "Abrir Reserva" → esperar modal → parseModal
- *   4. Cerrar modal, siguiente reserva
+ *   1. Situar el planning en el mes objetivo (goToMonth, navegación absoluta)
+ *   2. Listar las reservas ÚNICAS del mes (getReservaRefs)
+ *   3. Por cada una: clic → "Abrir Reserva" → esperar `#modalCentral.show`
+ *      → comprobar que el id de la ficha es el pedido → parseModal
+ *   4. Cerrar la ficha SIN borrarla del DOM, siguiente reserva
  *
  * Robustez:
  *   - Si un click falla, log warning y continuar (no abortar todo el run)
@@ -296,386 +298,196 @@ async function clickPrevMonth(frame: Frame): Promise<boolean> {
   return false;
 }
 
-/** Devuelve los handles de elementos .reserva visibles en el frame actual */
-async function getReservaHandles(frame: Frame) {
-  // Los selectores son aproximados — el recon detectó class="reserva".
-  // Probamos varias variantes para robustez. Solo devolvemos elementos visibles
-  // que NO estén dentro de un modal (evita capturar .reserva del modal fantasma).
-  const selectorVariants = [
-    '.reserva-bar',
-    '.reserva',
-    '[class*="reserva-"]',
-    '[data-tipo="reserva"]',
-  ];
-  for (const sel of selectorVariants) {
-    const allHandles = await frame.$$(sel);
-    if (allHandles.length === 0) continue;
-    // Filtrar: solo visibles Y no dentro de .modal
-    const filtered = [];
-    for (const h of allHandles) {
-      const ok = await h.evaluate((el: any) => {
-        // No debe estar dentro de un modal (residual ni activo)
-        if (el.closest('.modal, .modal-dialog, .modal-content, [role="dialog"]')) return false;
-        // Debe ser visible
-        if (!el.offsetParent) return false;
-        const rect = el.getBoundingClientRect();
-        if (rect.width === 0 || rect.height === 0) return false;
-        return true;
-      }).catch(() => false);
-      if (ok) filtered.push(h);
-    }
-    if (filtered.length > 0) {
-      log.info(`Found ${filtered.length} reservas via selector "${sel}" (filtered from ${allHandles.length})`);
-      return filtered;
-    }
-  }
-  return [];
-}
-
 /**
- * Click en una reserva → click en "Abrir Reserva" → esperar modal.
- * Devuelve true si el modal está visible, false si algo falló.
- */
-/** Todos los selectores de modal en una sola cadena CSS. */
-const MODAL_SELECTOR_CSS = [
-  '.modal.show',
-  '.modal.in',
-  '.modal[style*="display: block"]',
-  '#modal_reserva',
-  '#modalReserva',
-  '#modal-reserva',
-  '.modal-reserva',
-  '[role="dialog"][aria-modal="true"]',
-  '.swal2-popup',
-  '.ui-dialog',
-].join(', ');
-
-/**
- * Busca el modal visible en TODOS los frames de la página.
+ * Referencia a UNA reserva del planning.
  *
- * MisterPlan renderiza el planning dentro de un iframe, pero el diagnóstico de
- * oct 2026 mostró que tras pulsar "Abrir Reserva" no aparece nada en ese frame
- * — aunque en el DOM existen 9 elementos .modal ocultos. La ficha se abre en
- * otro frame. Antes solo mirábamos uno y dábamos el modal por no abierto.
+ * MisterPlan pinta un `div.reserva` por reserva Y POR DÍA, y además genera
+ * clones con el sufijo `_bloqueo_fantasma_N` en las filas de las demás
+ * habitaciones. En una vista de octubre 2026 eso son 96 elementos para solo
+ * 14 reservas reales: abríamos la misma ficha siete veces.
  */
-async function buscarFrameConModal(page: Page, timeoutMs = 4000): Promise<Frame | null> {
-  const hasta = Date.now() + timeoutMs;
-  while (Date.now() < hasta) {
-    for (const f of page.frames()) {
-      try {
-        const visible = await f.evaluate((sel: string) => {
-          const els = Array.from(document.querySelectorAll(sel)) as HTMLElement[];
-          return els.some((el) => {
-            const r = el.getBoundingClientRect();
-            return el.offsetParent !== null && r.width > 150 && r.height > 100;
-          });
-        }, MODAL_SELECTOR_CSS);
-        if (visible) return f;
-      } catch { /* frame detached o cross-origin */ }
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return null;
+type ReservaRef = { domId: string; idReserva: string };
+
+/**
+ * Una entrada por reserva real: sin clones fantasma, sin repetir días.
+ * La ficha trae todas las habitaciones de la reserva, así que abrirla una vez
+ * basta (parse-modal ya emite una fila por habitación).
+ */
+async function getReservaRefs(frame: Frame): Promise<ReservaRef[]> {
+  const refs: ReservaRef[] = await frame
+    .evaluate(() => {
+      const out: Array<{ domId: string; idReserva: string }> = [];
+      const vistos = new Set<string>();
+      const els = Array.from(document.querySelectorAll('div.reserva')) as HTMLElement[];
+      for (const el of els) {
+        if (/bloqueo_fantasma/i.test(el.id)) continue;          // clon de MisterPlan
+        if (el.closest('.modal, .modal-dialog, [role="dialog"]')) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        const idReserva = el.getAttribute('id_reserva') || '';
+        const clave = idReserva || el.id;
+        if (!clave || vistos.has(clave)) continue;              // mismo id en varios días
+        vistos.add(clave);
+        if (el.id) out.push({ domId: el.id, idReserva });
+      }
+      return out;
+    })
+    .catch(() => [] as ReservaRef[]);
+  log.info(`Reservas únicas en el planning: ${refs.length}`);
+  return refs;
 }
 
-async function openReservaModal(frame: Frame, idx: number, debug = false): Promise<Frame | null> {
-  // Re-fetch handles cada vez para evitar handles obsoletos tras mutaciones del DOM
-  const handles = await getReservaHandles(frame);
-  if (idx >= handles.length) return null;
-  const handle = handles[idx];
+/**
+ * Botón "Abrir Reserva" de la barra inferior.
+ *
+ * Verificado en vivo el 15/10/2026 sobre el planning real: un ÚNICO clic sobre
+ * la reserva la selecciona y despliega `#abrir_reserva`. El doble clic que
+ * hacíamos antes seleccionaba y volvía a deseleccionar, así que la barra nunca
+ * llegaba a quedar en pantalla y el log repetía
+ * `No se encontró un botón "Abrir Reserva" visible`.
+ */
+const ABRIR_SELECTOR =
+  '#abrir_reserva li.abrirReservaEvnt, #abrir_reserva a.linkBarraHerramientas';
 
+/**
+ * La ficha se abre SIEMPRE en `#modalCentral`, en el documento principal.
+ *
+ * Dos trampas comprobadas en el DOM real:
+ *
+ *  1. `#modalCentral` es `position: fixed`, y para un elemento fijo
+ *     `offsetParent` vale `null` SIEMPRE, abierto o cerrado. Todas nuestras
+ *     comprobaciones de visibilidad usaban `offsetParent !== null`, así que el
+ *     modal se daba por no abierto incluso estándolo. Aquí se mira la clase
+ *     `show`, el `display` calculado y el alto real del contenido.
+ *  2. `#modalCentral` es un contenedor ÚNICO que MisterPlan reutiliza para
+ *     cada ficha. No se puede borrar del DOM (ver closeModal).
+ */
+async function modalAbierto(frame: Frame, timeoutMs: number): Promise<boolean> {
+  const ok = await frame
+    .waitForFunction(
+      () => {
+        const m = document.getElementById('modalCentral');
+        if (!m) return false;
+        if (!m.classList.contains('show')) return false;
+        if (getComputedStyle(m).display === 'none') return false;
+        const c = m.querySelector('.modal-content') as HTMLElement | null;
+        return !!c && c.getBoundingClientRect().height > 100;
+      },
+      { timeout: timeoutMs },
+    )
+    .catch(() => null);
+  return !!ok;
+}
+
+/**
+ * Clic en la reserva → clic en "Abrir Reserva" → esperar `#modalCentral`.
+ * Devuelve el frame donde está la ficha, o null si no abrió.
+ */
+async function openReservaModal(
+  frame: Frame,
+  ref: ReservaRef,
+  debug = false,
+): Promise<Frame | null> {
   try {
-    // Scroll el handle a la vista para asegurar que es clickable
+    const handle = await frame.$(`div.reserva[id="${ref.domId}"]`);
+    if (!handle) {
+      if (debug) log.warning(`Reserva ${ref.idReserva}: el elemento ${ref.domId} ya no está en el DOM`);
+      return null;
+    }
+
     try {
       await handle.evaluate((el: any) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 150));
     } catch { /* ignore */ }
 
-    // Estrategia 1: doble-click + retry (MrPlan TCloudV2 abre con double-click)
-    // Hasta 2 reintentos si el primer click no produce el modal
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        await handle.click({ clickCount: 2, delay: 50 });
-        await new Promise((r) => setTimeout(r, 600));
-      } catch { /* try next */ }
+    // 1) UN solo clic: selecciona la reserva y despliega la barra inferior.
+    await handle.click({ delay: 40 });
 
-      // Comprobación rápida: ¿hay modal visible ya?
-      const modalVisible = await frame.evaluate(() => {
-        const sels = ['.modal.show', '.modal.in', '.modal[style*="display: block"]', '[role="dialog"][aria-modal="true"]'];
-        return sels.some(s => {
-          const el = document.querySelector(s) as HTMLElement | null;
-          return el && (el.offsetParent !== null);
-        });
-      }).catch(() => false);
-      if (modalVisible) break;
+    // 2) Botón "Abrir Reserva".
+    const btn = await frame
+      .waitForSelector(ABRIR_SELECTOR, { visible: true, timeout: 4000 })
+      .catch(() => null);
+    if (!btn) {
+      if (debug) log.warning(`Reserva ${ref.idReserva}: la barra "Abrir Reserva" no apareció tras el clic`);
+      return null;
+    }
+    await btn.click({ delay: 60 });
 
-      // Si no hay modal aún, esperar 400ms más antes de reintento
-      if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+    // 3) Esperar la ficha.
+    if (!(await modalAbierto(frame, 8000))) {
+      if (debug) log.warning(`Reserva ${ref.idReserva}: #modalCentral no llegó a abrirse`);
+      return null;
     }
 
-    // Esperar modal de Bootstrap/MrPlan
-    const modalSelectors = [
-      '.modal.show',
-      '.modal.in',
-      '.modal[style*="display: block"]',
-      '#modal_reserva',
-      '#modalReserva',
-      '#modal-reserva',
-      '.modal-reserva',
-      '[role="dialog"][aria-modal="true"]',
-      '.swal2-popup',
-      '.ui-dialog',
-    ];
-    // Un ÚNICO waitForSelector con todos los selectores combinados. Antes se
-    // recorrían de uno en uno con 1,5 s cada uno: con el modal sin abrir eso
-    // costaba 15 s por grupo y 43 s por reserva (44 min por mes).
-    {
-      const sel = MODAL_SELECTOR_CSS;
-      const found = await frame.waitForSelector(sel, { visible: true, timeout: 2500 }).catch(() => null);
-      if (found) {
-        if (debug) {
-          log.info(`Modal opened via dblclick · idx=${idx}`);
-          // Dump modal HTML para las primeras 3 reservas
-          if (idx < 3) {
-            try {
-              const html = await frame.evaluate((s: string) => {
-                const m = document.querySelector(s);
-                return m ? m.outerHTML : '';
-              }, sel);
-              if (html) {
-                const page = (frame as any).page ? (frame as any).page() : null;
-                if (page) {
-                  const png = await page.screenshot({ fullPage: true, type: 'png' });
-                  const { KeyValueStore } = await import('crawlee');
-                  const store = await KeyValueStore.open('debug-screenshots');
-                  await store.setValue(`modal-dblclick-idx-${idx}.html`, html, { contentType: 'text/html' });
-                  await store.setValue(`modal-dblclick-idx-${idx}.png`, png, { contentType: 'image/png' });
-                  log.info(`Modal HTML dumped: modal-dblclick-idx-${idx}.html (${html.length} chars)`);
-                }
-              }
-            } catch (e: any) { log.warning(`dump fail: ${e.message}`); }
-          }
-        }
-        return frame;
-      }
+    // 4) Comprobar que la ficha abierta es la que pedimos. Si la barra
+    //    conservaba la selección anterior parsearíamos la reserva equivocada
+    //    sin enterarnos — exactamente el tipo de fallo silencioso que nos ha
+    //    costado los descuadres de este proyecto.
+    const idEnModal = await frame
+      .evaluate(() => {
+        const b = document.querySelector('#modalCentral [id_reserva]');
+        return b ? b.getAttribute('id_reserva') : null;
+      })
+      .catch(() => null);
+    if (idEnModal && ref.idReserva && idEnModal !== ref.idReserva) {
+      log.warning(`FICHA_CRUZADA: pedida ${ref.idReserva}, abierta ${idEnModal} — se descarta`);
+      return null;
     }
 
-    // Estrategia 2: click + buscar botón "Abrir Reserva" / "Editar Reserva"
-    await handles[idx].click({ delay: 50 });
-    await new Promise((r) => setTimeout(r, 400));
-
-    // Clic REAL sobre "Abrir Reserva".
-    // Antes se hacía `el.click()` dentro de un evaluate: eso es un clic
-    // sintético (isTrusted=false) y MisterPlan no lo procesa — el log decía
-    // "Clicked open button: Abrir Reserva" y acto seguido "Modal didn't
-    // appear". Ahora se obtiene el ElementHandle y se pulsa con el ratón de
-    // Puppeteer, que sí genera un evento de confianza.
-    let abrirPulsado = false;
-    try {
-      const btnHandle = await frame.evaluateHandle(() => {
-        const candidates = Array.from(document.querySelectorAll('a, button, li, div, span'));
-        for (const el of candidates) {
-          const txt = (el.textContent || '').trim();
-          if (/^(Abrir Reserva|Ver detalle|Editar Reserva|Ver Reserva|Detalle Reserva)$/i.test(txt)) {
-            const r = (el as HTMLElement).getBoundingClientRect();
-            if ((el as HTMLElement).offsetParent !== null && r.width > 0 && r.height > 0) return el;
-          }
-        }
-        return null;
-      });
-      const btn = btnHandle.asElement();
-      if (btn) {
-        try {
-          await (btn as any).evaluate((el: any) => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
-        } catch { /* ignore */ }
-        await (btn as any).click({ delay: 60 });
-        abrirPulsado = true;
-        if (debug) log.info('Clic REAL sobre "Abrir Reserva"');
-      } else if (debug) {
-        log.info('No se encontró un botón "Abrir Reserva" visible');
-      }
-      await btnHandle.dispose().catch(() => undefined);
-    } catch (e: any) {
-      if (debug) log.warning(`Clic sobre Abrir Reserva falló: ${e.message}`);
-    }
-    if (abrirPulsado) await new Promise((r) => setTimeout(r, 900));
-
-    {
-      const sel = MODAL_SELECTOR_CSS;
-      const found = await frame.waitForSelector(sel, { visible: true, timeout: 2500 }).catch(() => null);
-      if (found) {
-        if (debug) {
-          log.info(`Modal opened via open-button · idx=${idx}`);
-          if (idx < 3) {
-            try {
-              const html = await frame.evaluate((s: string) => {
-                const m = document.querySelector(s);
-                return m ? m.outerHTML : '';
-              }, sel);
-              if (html) {
-                const page = (frame as any).page ? (frame as any).page() : null;
-                if (page) {
-                  const png = await page.screenshot({ fullPage: true, type: 'png' });
-                  const { KeyValueStore } = await import('crawlee');
-                  const store = await KeyValueStore.open('debug-screenshots');
-                  await store.setValue(`modal-openbtn-idx-${idx}.html`, html, { contentType: 'text/html' });
-                  await store.setValue(`modal-openbtn-idx-${idx}.png`, png, { contentType: 'image/png' });
-                  log.info(`Modal HTML dumped: modal-openbtn-idx-${idx}.html (${html.length} chars)`);
-                }
-              }
-            } catch (e: any) { log.warning(`dump fail: ${e.message}`); }
-          }
-        }
-        return frame;
-      }
-    }
-
-    // Estrategia 3: en el documento (no solo frame) por si MrPlan abre modal a nivel top
-    try {
-      const page = (frame as any).page ? (frame as any).page() : null;
-      if (page) {
-        const found = await page.waitForSelector(MODAL_SELECTOR_CSS, { visible: true, timeout: 1500 }).catch(() => null);
-        if (found) {
-          if (debug) log.info(`Modal opened at page-level · idx=${idx}`);
-          return frame;
-        }
-      }
-    } catch { /* ignore */ }
-
-    // Estrategia 4: barrer TODOS los frames — la ficha puede abrirse en otro
-    try {
-      const page4: Page | null = (frame as any).page ? (frame as any).page() : null;
-      if (page4) {
-        const f = await buscarFrameConModal(page4, 4000);
-        if (f) {
-          if (debug) log.info(`Modal encontrado en otro frame · idx=${idx}`);
-          return f;
-        }
-      }
-    } catch { /* ignore */ }
-
-    // DIAGNÓSTICO: ¿qué aparece realmente tras pulsar "Abrir Reserva"?
-    // Las capturas al KeyValueStore no estaban llegando, así que lo volcamos
-    // al log, que sí se puede leer desde el panel.
-    if (idx < 2) {
-      try {
-        const pista = await frame.evaluate(() => {
-          const vis = (el: Element) => {
-            const r = (el as HTMLElement).getBoundingClientRect();
-            return r.width > 200 && r.height > 150 && (el as HTMLElement).offsetParent !== null;
-          };
-          const grandes = Array.from(document.querySelectorAll('div,section,form,dialog,aside'))
-            .filter(vis)
-            .slice(-12)
-            .map((el) => ({
-              tag: el.tagName.toLowerCase(),
-              id: (el as HTMLElement).id || null,
-              cls: ((el as HTMLElement).className || '').toString().slice(0, 90),
-            }));
-          return {
-            url: location.href,
-            iframes: document.querySelectorAll('iframe').length,
-            dialogs: document.querySelectorAll('[role=dialog],dialog,.modal').length,
-            grandes,
-          };
-        });
-        log.warning(`DIAG_MODAL idx=${idx}: ${JSON.stringify(pista).slice(0, 1200)}`);
-      } catch (e: any) {
-        log.warning(`DIAG_MODAL falló: ${e.message}`);
-      }
-    }
-
-    if (debug) {
-      log.warning(`Modal didn't appear for reserva idx ${idx}`);
-      // Guardar screenshot del estado actual para debug
-      try {
-        const page = (frame as any).page ? (frame as any).page() : null;
-        if (page && idx < 3) {
-          const { KeyValueStore } = await import('crawlee');
-          const store = await KeyValueStore.open('debug-screenshots');
-          const png = await page.screenshot({ fullPage: true, type: 'png' });
-          await store.setValue(`reserva-idx-${idx}-no-modal.png`, png, { contentType: 'image/png' });
-        }
-      } catch { /* ignore */ }
-    }
-    return null;
+    if (debug) log.info(`Ficha abierta · reserva ${ref.idReserva}`);
+    return frame;
   } catch (err) {
-    log.warning(`openReservaModal idx ${idx} failed: ${(err as Error).message}`);
+    log.warning(`openReservaModal ${ref.idReserva} falló: ${(err as Error).message}`);
     return null;
   }
 }
 
+/**
+ * Cierra la ficha.
+ *
+ * NO BORRAR NODOS `.modal` DEL DOM. La versión anterior terminaba con un
+ * "nuke final" que hacía `document.querySelectorAll('.modal, ...').remove()`
+ * para evitar que un `.reserva` residual del modal confundiera al siguiente
+ * barrido. El efecto real: borraba `#modalCentral`, que es el único contenedor
+ * que MisterPlan reutiliza para todas las fichas. A partir de la primera
+ * reserva de cada mes ya no había dónde pintar y ninguna ficha volvía a abrir.
+ * El filtrado de `.reserva` dentro de modales ya lo hace getReservaRefs().
+ */
 async function closeModal(frame: Frame): Promise<void> {
-  // 1) Intentar click sobre cualquier botón cerrar visible (CSS válidos en Puppeteer)
-  const closers = [
-    '.modal.show .btn-close',
-    '.modal.show button.close',
-    '.modal.show [data-dismiss="modal"]',
-    '.modal.show [data-bs-dismiss="modal"]',
-    '.modal.show [aria-label="Close"]',
-    '.modal.in .btn-close',
-    '.modal.in button.close',
-  ];
-  let clicked = false;
-  for (const sel of closers) {
-    try {
-      const el = await frame.$(sel);
-      if (el) {
-        await el.click({ delay: 30 });
-        clicked = true;
-        break;
-      }
-    } catch { /* try next */ }
-  }
-  // 2) Si no clickeó, buscar botón por texto via evaluate
-  if (!clicked) {
-    try {
-      clicked = await frame.evaluate(() => {
-        const btns = Array.from(document.querySelectorAll('.modal.show button, .modal.in button, .modal[style*="display: block"] button')) as HTMLElement[];
-        const cerrar = btns.find((b) => /cerrar|close/i.test(b.textContent || '') || b.classList.contains('close') || b.getAttribute('aria-label') === 'Close');
-        if (cerrar) {
-          cerrar.click();
-          return true;
+  try {
+    const btn = await frame.$(
+      '#modalCentral button[data-dismiss="modal"], #modalCentral button[data-bs-dismiss="modal"], #modalCentral .modal-header button.close',
+    );
+    if (btn) await btn.click({ delay: 30 });
+  } catch { /* se intenta el cierre duro abajo */ }
+
+  const cerrado = await frame
+    .waitForFunction(
+      () => {
+        const m = document.getElementById('modalCentral');
+        if (!m) return true;
+        return !m.classList.contains('show') || getComputedStyle(m).display === 'none';
+      },
+      { timeout: 4000 },
+    )
+    .catch(() => null);
+
+  await frame
+    .evaluate((forzar: boolean) => {
+      if (forzar) {
+        const m = document.getElementById('modalCentral');
+        if (m) {
+          m.classList.remove('show', 'in');
+          (m as HTMLElement).style.display = 'none';
         }
-        return false;
-      });
-    } catch { /* ignore */ }
-  }
-  // 3) Fallback: ESC en window + ocultar modal manualmente
-  if (!clicked) {
-    await frame.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', which: 27, keyCode: 27, bubbles: true }));
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', which: 27, keyCode: 27, bubbles: true }));
-      // Hard close: quitar clase show + backdrop
-      document.querySelectorAll('.modal.show, .modal.in').forEach((m) => {
-        (m as HTMLElement).classList.remove('show', 'in');
-        (m as HTMLElement).style.display = 'none';
-      });
+      }
+      // El backdrop sí se puede quitar: se recrea en cada apertura.
       document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
       document.body.classList.remove('modal-open');
       (document.body as HTMLElement).style.overflow = '';
-    });
-  }
-  // 4) Esperar a que .modal.show desaparezca (máx 3s — modales grandes tardan más)
-  try {
-    await frame.waitForFunction(() => {
-      const visibles = Array.from(document.querySelectorAll('.modal.show, .modal.in, .modal[style*="display: block"], [role="dialog"][aria-modal="true"]'));
-      return visibles.every((m: any) => !m.offsetParent);
-    }, { timeout: 3000 });
-  } catch { /* seguirá con el nuked-cleanup abajo */ }
-
-  // 5) NUKE FINAL: eliminar TODO rastro de modal del DOM (evita fantasmas
-  //    que contengan .reserva y confundan al siguiente getReservaHandles)
-  await frame.evaluate(() => {
-    // Eliminar completamente cualquier .modal / .modal-dialog / [role="dialog"]
-    document.querySelectorAll('.modal, .modal-dialog, .modal-backdrop, [role="dialog"][aria-modal="true"]').forEach((m) => {
-      try { m.remove(); } catch { /* ignore */ }
-    });
-    // Restaurar body
-    document.body.classList.remove('modal-open');
-    (document.body as HTMLElement).style.overflow = '';
-    (document.body as HTMLElement).style.paddingRight = '';
-  }).catch(() => null);
+      (document.body as HTMLElement).style.paddingRight = '';
+    }, !cerrado)
+    .catch(() => null);
 }
 
 export async function scrapePlanning(
@@ -747,18 +559,18 @@ export async function scrapePlanning(
       await options.saveScreenshot(`month-${m}-overview.png`, buf as Buffer);
     }
 
-    const handles = await getReservaHandles(frame);
-    log.info(`Month ${m + 1}: found ${handles.length} reserva elements`);
+    const refs = await getReservaRefs(frame);
+    log.info(`Month ${m + 1}: ${refs.length} reservas únicas`);
 
-    for (let i = 0; i < handles.length; i++) {
+    for (let i = 0; i < refs.length; i++) {
       if (tiempoAgotado()) {
         cortadoPorTiempo = true;
-        log.warning(`Presupuesto de tiempo agotado en el mes ${m + 1} tras ${i}/${handles.length} reservas`);
+        log.warning(`Presupuesto de tiempo agotado en el mes ${m + 1} tras ${i}/${refs.length} reservas`);
         break;
       }
       let modalFrame: Frame | null = null;
       try {
-        modalFrame = await openReservaModal(frame, i, options.debug);
+        modalFrame = await openReservaModal(frame, refs[i], options.debug);
         if (!modalFrame) {
           errors.push({ step: 'openModal', error: 'modal not visible', reservaIndex: i });
           fallosModalSeguidos++;
