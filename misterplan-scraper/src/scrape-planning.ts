@@ -475,49 +475,58 @@ async function openReservaModal(
 /**
  * Cierra la ficha.
  *
- * NO BORRAR NODOS `.modal` DEL DOM. La versión anterior terminaba con un
- * "nuke final" que hacía `document.querySelectorAll('.modal, ...').remove()`
- * para evitar que un `.reserva` residual del modal confundiera al siguiente
- * barrido. El efecto real: borraba `#modalCentral`, que es el único contenedor
- * que MisterPlan reutiliza para todas las fichas. A partir de la primera
- * reserva de cada mes ya no había dónde pintar y ninguna ficha volvía a abrir.
- * El filtrado de `.reserva` dentro de modales ya lo hace getReservaRefs().
+ * NADA DE CIRUGÍA SOBRE EL DOM. Dos versiones seguidas han muerto aquí:
+ *   · la primera borraba los nodos `.modal`, y con ellos `#modalCentral`, que
+ *     es el contenedor único que MisterPlan reutiliza para todas las fichas;
+ *   · la segunda ya no borraba nada, pero forzaba `display:none`, quitaba la
+ *     clase `show` y eliminaba el backdrop a mano. Eso desincroniza el estado
+ *     interno de Bootstrap: cree que el modal sigue abierto y la siguiente
+ *     llamada a `show` no hace nada. Síntoma: abre la PRIMERA ficha de cada
+ *     mes y ninguna más.
+ *
+ * Comprobado en vivo sobre el planning real (15/10/2026): pulsando el botón
+ * de cierre, Bootstrap deja solo el `#modalCentral` oculto, cero backdrops y
+ * el body limpio, y la ficha siguiente abre sin problema.
  */
 async function closeModal(frame: Frame): Promise<void> {
   try {
     const btn = await frame.$(
-      '#modalCentral button[data-dismiss="modal"], #modalCentral button[data-bs-dismiss="modal"], #modalCentral .modal-header button.close',
+      '#modalCentral button[data-dismiss="modal"], #modalCentral button[data-bs-dismiss="modal"]',
     );
     if (btn) await btn.click({ delay: 30 });
-  } catch { /* se intenta el cierre duro abajo */ }
+  } catch { /* se intenta por jQuery abajo */ }
 
   const cerrado = await frame
     .waitForFunction(
       () => {
         const m = document.getElementById('modalCentral');
         if (!m) return true;
-        return !m.classList.contains('show') || getComputedStyle(m).display === 'none';
+        return !m.classList.contains('show') && getComputedStyle(m).display === 'none';
       },
-      { timeout: 4000 },
+      { timeout: 5000 },
     )
     .catch(() => null);
+  if (cerrado) return;
 
+  // Fallback: pedírselo a Bootstrap, que se encarga de backdrop y body.
   await frame
-    .evaluate((forzar: boolean) => {
-      if (forzar) {
-        const m = document.getElementById('modalCentral');
-        if (m) {
-          m.classList.remove('show', 'in');
-          (m as HTMLElement).style.display = 'none';
-        }
-      }
-      // El backdrop sí se puede quitar: se recrea en cada apertura.
-      document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
-      document.body.classList.remove('modal-open');
-      (document.body as HTMLElement).style.overflow = '';
-      (document.body as HTMLElement).style.paddingRight = '';
-    }, !cerrado)
+    .evaluate(() => {
+      const w = window as any;
+      try {
+        if (w.jQuery) w.jQuery('#modalCentral').modal('hide');
+      } catch { /* ignore */ }
+    })
     .catch(() => null);
+  await frame
+    .waitForFunction(
+      () => {
+        const m = document.getElementById('modalCentral');
+        return !m || getComputedStyle(m).display === 'none';
+      },
+      { timeout: 3000 },
+    )
+    .catch(() => null);
+  log.warning('closeModal: la ficha no se cerró por el botón; forzado por jQuery');
 }
 
 export async function scrapePlanning(
