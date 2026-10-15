@@ -336,6 +336,20 @@ async function getReservaHandles(frame: Frame) {
  * Click en una reserva → click en "Abrir Reserva" → esperar modal.
  * Devuelve true si el modal está visible, false si algo falló.
  */
+/** Todos los selectores de modal en una sola cadena CSS. */
+const MODAL_SELECTOR_CSS = [
+  '.modal.show',
+  '.modal.in',
+  '.modal[style*="display: block"]',
+  '#modal_reserva',
+  '#modalReserva',
+  '#modal-reserva',
+  '.modal-reserva',
+  '[role="dialog"][aria-modal="true"]',
+  '.swal2-popup',
+  '.ui-dialog',
+].join(', ');
+
 async function openReservaModal(frame: Frame, idx: number, debug = false): Promise<boolean> {
   // Re-fetch handles cada vez para evitar handles obsoletos tras mutaciones del DOM
   const handles = await getReservaHandles(frame);
@@ -384,11 +398,15 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
       '.swal2-popup',
       '.ui-dialog',
     ];
-    for (const sel of modalSelectors) {
-      const found = await frame.waitForSelector(sel, { visible: true, timeout: 1500 }).catch(() => null);
+    // Un ÚNICO waitForSelector con todos los selectores combinados. Antes se
+    // recorrían de uno en uno con 1,5 s cada uno: con el modal sin abrir eso
+    // costaba 15 s por grupo y 43 s por reserva (44 min por mes).
+    {
+      const sel = MODAL_SELECTOR_CSS;
+      const found = await frame.waitForSelector(sel, { visible: true, timeout: 2500 }).catch(() => null);
       if (found) {
         if (debug) {
-          log.info(`Modal opened via dblclick · selector="${sel}" · idx=${idx}`);
+          log.info(`Modal opened via dblclick · idx=${idx}`);
           // Dump modal HTML para las primeras 3 reservas
           if (idx < 3) {
             try {
@@ -431,11 +449,12 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
     }).catch(() => ({ found: false }));
     if (debug && (openClicked as any).found) log.info(`Clicked open button: ${(openClicked as any).text}`);
 
-    for (const sel of modalSelectors) {
-      const found = await frame.waitForSelector(sel, { visible: true, timeout: 1500 }).catch(() => null);
+    {
+      const sel = MODAL_SELECTOR_CSS;
+      const found = await frame.waitForSelector(sel, { visible: true, timeout: 2500 }).catch(() => null);
       if (found) {
         if (debug) {
-          log.info(`Modal opened via open-button · selector="${sel}" · idx=${idx}`);
+          log.info(`Modal opened via open-button · idx=${idx}`);
           if (idx < 3) {
             try {
               const html = await frame.evaluate((s: string) => {
@@ -464,12 +483,10 @@ async function openReservaModal(frame: Frame, idx: number, debug = false): Promi
     try {
       const page = (frame as any).page ? (frame as any).page() : null;
       if (page) {
-        for (const sel of modalSelectors) {
-          const found = await page.waitForSelector(sel, { visible: true, timeout: 1000 }).catch(() => null);
-          if (found) {
-            if (debug) log.info(`Modal opened at page-level · selector="${sel}" · idx=${idx}`);
-            return true;
-          }
+        const found = await page.waitForSelector(MODAL_SELECTOR_CSS, { visible: true, timeout: 1500 }).catch(() => null);
+        if (found) {
+          if (debug) log.info(`Modal opened at page-level · idx=${idx}`);
+          return true;
         }
       }
     } catch { /* ignore */ }
@@ -601,6 +618,9 @@ export async function scrapePlanning(
   const timeoutAt = timeoutAtRaw ? new Date(timeoutAtRaw).getTime() : null;
   // 75s: con 45s todavía se colaba algún TIMED-OUT cuando el último modal tardaba
   const RESERVA_MARGEN_MS = 75_000;
+  /** Fichas seguidas sin abrir antes de dar el planning por roto. */
+  const MAX_FALLOS_MODAL = 5;
+  let modalRoto = false;
   let cortadoPorTiempo = false;
   const tiempoAgotado = () =>
     timeoutAt !== null && Date.now() > timeoutAt - RESERVA_MARGEN_MS;
@@ -611,6 +631,7 @@ export async function scrapePlanning(
       log.warning(`Presupuesto de tiempo agotado antes del mes ${m + 1}/${totalMonths} — cierre limpio con ${monthsScraped} meses persistidos`);
       break;
     }
+    let fallosModalSeguidos = 0;
     const objetivo = objetivos[m];
     const etiquetaMes = `${String(objetivo.month1).padStart(2, '0')}/${objetivo.year}`;
     log.info(`-- Scraping month ${m + 1}/${totalMonths} (${etiquetaMes}) --`);
@@ -645,9 +666,23 @@ export async function scrapePlanning(
         const opened = await openReservaModal(frame, i, options.debug);
         if (!opened) {
           errors.push({ step: 'openModal', error: 'modal not visible', reservaIndex: i });
+          fallosModalSeguidos++;
+          // Si ninguna ficha abre, MisterPlan ha cambiado el planning. Seguir
+          // intentando las 60 restantes solo quema tiempo y créditos: en una
+          // ejecución real esto costó 44 minutos por mes sin extraer nada.
+          if (fallosModalSeguidos >= MAX_FALLOS_MODAL) {
+            modalRoto = true;
+            log.error(
+              `MODAL_NO_ABRE: ${fallosModalSeguidos} fichas seguidas sin abrir en ${etiquetaMes}. ` +
+              'Se aborta: lo más probable es que haya cambiado el DOM del planning de MisterPlan.',
+            );
+            errors.push({ step: 'openModal', error: `MODAL_NO_ABRE tras ${fallosModalSeguidos} intentos`, reservaIndex: i });
+            break;
+          }
           continue;
         }
 
+        fallosModalSeguidos = 0;
         const parsed = await parseModalReserva(frame, {
           debugComplementarios: options.debugComplementarios === true,
         });
@@ -681,6 +716,10 @@ export async function scrapePlanning(
       }
     }
 
+    if (modalRoto) {
+      log.error('Abortando el resto de meses: el planning no abre fichas.');
+      break;
+    }
     if (cortadoPorTiempo) break;
     // Ya no se avanza de forma relativa: la próxima iteración se sitúa sola
     // en su mes objetivo con goToMonth().
