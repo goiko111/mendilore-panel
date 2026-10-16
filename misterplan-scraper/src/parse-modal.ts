@@ -239,33 +239,85 @@ export async function parseModalReserva(
     // Si MrPlan usa otro encabezado (o ninguno) no se extraía NADA y los
     // complementarios quedaban a 0 en todo el panel. Ahora: intentamos el bloque
     // acotado y, si no aparece, escaneamos el modal entero.
+    // El bloque va desde el rótulo hasta "Acompañantes" (o cualquier otro
+    // cierre conocido). Verificado contra la ficha real: el listado de
+    // consumos termina siempre antes de la lista de acompañantes.
     const bloqueMatch = modalText.match(
-      /(?:Otros\s+servicios(?:\s+y\s+descuentos)?|Servicios\s+complementarios|Complementos|Consumos|Extras|Cargos)([\s\S]{0,5000}?)(?:Condiciones|Totales|Ver reserva|$)/i,
+      /(?:Otros\s+servicios(?:\s+y\s+descuentos)?|Servicios\s+complementarios|Complementos|Consumos|Extras|Cargos)([\s\S]{0,20000}?)(?:Acompa[nñ]antes|Condiciones|Totales|Hospedajes|Ver reserva|$)/i,
     );
     {
       const bloque = bloqueMatch ? bloqueMatch[1] : modalText;
-      // Regex: CONCEPTO x CANTIDAD [Habitación XXX] [dd/mm/yyyy] IMPORTE €
-      const linRe = /([A-ZÁÉÍÓÚÑa-záéíóúñ][A-Za-záéíóúÁÉÍÓÚñÑ0-9\s\-_.]{1,80}?)\s+x\s+(\d+)\s+(?:Habitaci[oó]n\s+(\S+)\s+)?(\d{1,2}\/\d{1,2}\/\d{4})?\s*([\d.,]+)\s*€/g;
-      let m: RegExpExecArray | null;
-      while ((m = linRe.exec(bloque)) !== null) {
-        const concepto = m[1].trim().replace(/\s+/g, ' ');
-        const cantidad = parseInt(m[2], 10) || 1;
-        const habLinea = m[3] ? normalizarHabitacion(m[3]) : null;
-        const fechaRaw = m[4];
-        const importe = parseImporte(m[5]);
-        // Fecha en ISO
-        let fecha: string | null = null;
-        if (fechaRaw) {
-          const parts = fechaRaw.split('/');
-          if (parts.length === 3) {
-            fecha = `${parts[2].padStart(4, '20')}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+
+      // Extracción POR LÍNEAS, no con una única expresión regular.
+      //
+      // La versión anterior usaba un solo regex que exigía
+      //   CONCEPTO x N [Habitación X] [dd/mm/yyyy] IMPORTE €
+      // y se perdía todas las líneas con fecha, porque en la ficha real la
+      // fecha va en la línea SIGUIENTE y precedida de la palabra "Para":
+      //
+      //   Salmón marinado x 1
+      //   Para 18/08/2026        21,00 €
+      //
+      // También se dejaba fuera cualquier concepto con paréntesis
+      // ("Lavandería (1 lavadora sin planchado)"), que no entraban en su
+      // clase de caracteres. Son justo las líneas donde está el dinero: en la
+      // reserva 1-6844571 leía 8 líneas y 77 €, cuando son 26 y 772,00 € —
+      // el mismo importe que da el informe de facturación de MisterPlan.
+      const FIN_BLOQUE = /^(?:Acompa[nñ]antes|Condiciones|Totales|Hospedajes|Ver reserva|Cerrar)\b/i;
+      const RE_IMPORTE = /(-?[\d.]*\d(?:,\d{2})?)\s*€/;
+      const RE_CONCEPTO = /^(.*?)\s+x\s+(\d+)$/;
+      const RE_PARA = /^Para\s+(\d{1,2}\/\d{1,2}\/\d{4})$/i;
+
+      const lineas = bloque.split('\n');
+      for (let li = 0; li < lineas.length; li++) {
+        const linea = lineas[li].replace(/\s+$/, '');
+        if (!linea.trim()) continue;
+        if (FIN_BLOQUE.test(linea.trim())) break;
+
+        const celdas = linea.split('\t').map((c) => c.trim()).filter(Boolean);
+        const mc = (celdas[0] || '').match(RE_CONCEPTO);
+        if (!mc) continue;
+
+        const concepto = mc[1].trim().replace(/\s+/g, ' ');
+        const cantidad = parseInt(mc[2], 10) || 1;
+        let habLinea: string | null = null;
+        let fechaRaw: string | null = null;
+        let importe: number | null = null;
+
+        for (const celda of celdas.slice(1)) {
+          const mh = celda.match(/^Habitaci[oó]n\s+(.+)$/i);
+          if (mh) { habLinea = normalizarHabitacion(mh[1].trim()); continue; }
+          const mi = celda.match(RE_IMPORTE);
+          if (mi && importe === null) importe = parseImporte(mi[1]);
+        }
+
+        // Importe en la línea siguiente, tras "Para dd/mm/yyyy".
+        if (importe === null && li + 1 < lineas.length) {
+          const cs = lineas[li + 1].split('\t').map((c) => c.trim()).filter(Boolean);
+          const mf = (cs[0] || '').match(RE_PARA);
+          if (mf) {
+            for (const celda of cs.slice(1)) {
+              const mi = celda.match(RE_IMPORTE);
+              if (mi) { importe = parseImporte(mi[1]); break; }
+            }
+            if (importe !== null) { fechaRaw = mf[1]; li++; }
           }
         }
-        // Descartar filas que en realidad son totales/alojamiento, no consumos
-        const esRuido = /^(?:importe|total|alojamiento|hospedaje|pendiente|anticipo|comisi|precio|subtotal|iva|base)/i
+        if (importe === null || Number.isNaN(importe)) continue;
+
+        let fecha: string | null = null;
+        if (fechaRaw) {
+          const p = fechaRaw.split('/');
+          if (p.length === 3) fecha = `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+        }
+
+        const esRuido = /^(?:importe|total|alojamiento|hospedaje|pendiente|anticipo|comisi|precio|subtotal|iva|base|noches?)/i
           .test(concepto);
-        if (concepto && !esRuido && importe >= 0 && concepto.length < 100) {
-          complementarios.push({ concepto, cantidad, fecha, importe, raw_text: m[0].slice(0, 200), habitacion: habLinea } as any);
+        if (concepto && !esRuido && concepto.length < 100) {
+          complementarios.push({
+            concepto, cantidad, fecha, importe,
+            raw_text: linea.slice(0, 200), habitacion: habLinea,
+          } as any);
         }
       }
     }
