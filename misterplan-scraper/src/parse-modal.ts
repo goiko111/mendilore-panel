@@ -366,7 +366,22 @@ export async function parseModalReserva(
 
   // Intentar importe de alojamiento POR habitación: primer importe € tras el nombre
   const perRoomAloja: number[] = rooms.map(({ hab, idx }) => {
-    const seg = textoHabitaciones.slice(idx, idx + 160);
+    const seg = textoHabitaciones.slice(idx, idx + 400);
+    // La línea de la habitación trae DOS importes:
+    //     2P Estándar   7 noches x   240,00 €   1.680,00 €
+    // el precio por noche y el total. Cogíamos el primero que apareciera, o
+    // sea el precio por noche, y guardábamos 240 € donde eran 1.680 €. Solo
+    // afectaba a las reservas de varias habitaciones (las de una sola usan el
+    // importe global de la ficha), pero bastaba para dejar el alojamiento del
+    // panel un 13 % por debajo del informe de MisterPlan.
+    const mTotal = seg.match(/(\d+)\s*noches?\s*x\s*([\d.,]+)\s*€\s*([\d.,]+)\s*€/i);
+    if (mTotal) return parseImporte(mTotal[3]);
+    const mNoches = seg.match(/(\d+)\s*noches?\s*x\s*([\d.,]+)\s*€/i);
+    if (mNoches) {
+      const n = parseInt(mNoches[1], 10);
+      const p = parseImporte(mNoches[2]);
+      if (n > 0 && p > 0) return Math.round(n * p * 100) / 100;
+    }
     const m = seg.match(/([\d.,]+)\s*€/);
     return m ? parseImporte(m[1]) : 0;
   });
