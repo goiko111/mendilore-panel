@@ -379,6 +379,16 @@ export async function parseModalReserva(
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
+  // Si la ficha trae desglose por líneas, cada habitación se queda EXACTAMENTE
+  // con las suyas (la primera absorbe las que no indican habitación) y no se
+  // reparte nada más. El reparto proporcional solo vale cuando no hay líneas.
+  //
+  // Antes la fila 0 se llevaba todas las líneas sin habitación Y las demás
+  // filas recibían además su parte del total: una reserva de dos habitaciones
+  // con 772 € de consumos acababa sumando 1.182 €. De ahí que el panel saliera
+  // por encima tanto de la cifra de Juan como del informe de MisterPlan.
+  const hayLineas = complementarios.length > 0;
+
   const out: ReservaScraped[] = rooms.map(({ hab }, i) => {
     // Complementarios de ESTA habitación (línea con "Habitación X"); sin habitación → primera fila
     const compRoom = complementarios.filter((c: any) =>
@@ -390,7 +400,7 @@ export async function parseModalReserva(
       : usePerRoom ? perRoomAloja[i] : round2((importe_alojamiento ?? 0) * shares[i]);
     const totalRoom = rooms.length === 1
       ? importe_total
-      : round2((alojaRoom ?? 0) + (compImporte > 0 ? compImporte : round2(importe_complementarios * shares[i])));
+      : round2((alojaRoom ?? 0) + (hayLineas ? compImporte : round2(importe_complementarios * shares[i])));
     return {
       id_reserva,
       localizador_externo,
@@ -409,7 +419,7 @@ export async function parseModalReserva(
       importe_alojamiento: alojaRoom,
       importe_complementarios: rooms.length === 1
         ? importe_complementarios
-        : (compImporte > 0 ? round2(compImporte) : round2(importe_complementarios * shares[i])),
+        : hayLineas ? round2(compImporte) : round2(importe_complementarios * shares[i]),
       importe_moneda: 'EUR',
       anticipo: rooms.length === 1 ? anticipo : round2(anticipo * shares[i]),
       pendiente_cobro: rooms.length === 1 ? pendiente_cobro : round2(pendiente_cobro * shares[i]),
