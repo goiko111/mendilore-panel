@@ -9,8 +9,8 @@
  *   - La ficha se pinta en `#modalCentral`, contenedor único y reutilizado
  *
  * Estrategia:
- *   1. Situar el planning en el mes objetivo (goToMonth, navegación absoluta)
- *   2. Listar las reservas ÚNICAS del mes (getReservaRefs)
+ *   1. Situar el planning en cada ventana de 14 días (goToFecha, absoluta)
+ *   2. Listar las reservas ÚNICAS aún no vistas (getReservaRefs)
  *   3. Por cada una: clic → "Abrir Reserva" → esperar `#modalCentral.show`
  *      → comprobar que el id de la ficha es el pedido → parseModal
  *   4. Cerrar la ficha SIN borrarla del DOM, siguiente reserva
@@ -176,22 +176,18 @@ async function navigateMonth(frame: Frame, direction: number): Promise<boolean> 
  * Además antes se devolvía true por el mero hecho de escribir en el input,
  * sin comprobar que el planning hubiera cambiado de mes.
  */
-async function goToMonth(frame: Frame, year: number, month1: number): Promise<boolean> {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const objetivo = `${pad(month1)}/${year}`;
+async function goToFecha(frame: Frame, iso: string): Promise<boolean> {
+  const [yyyy, mm, dd] = iso.split('-');
+  const objetivo = `${dd}/${mm}/${yyyy}`;
 
   for (let intento = 1; intento <= 3; intento++) {
-    const res = await frame.evaluate((target: { y: number; m: number }) => {
+    const res = await frame.evaluate((target: string) => {
       const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
       const dateInput = inputs.find(
         (i) => i.offsetParent !== null && /^\d{2}\/\d{2}\/\d{4}$/.test(i.value),
       );
       if (!dateInput) return { ok: false, reason: 'no visible date input' };
-      const pad2 = (n: number) => String(n).padStart(2, '0');
-      // Día 01 siempre: evita cualquier desbordamiento de mes.
-      const nuevo = `01/${pad2(target.m)}/${target.y}`;
-      const anterior = dateInput.value;
-      dateInput.value = nuevo;
+      dateInput.value = target;
       dateInput.dispatchEvent(new Event('input', { bubbles: true }));
       dateInput.dispatchEvent(new Event('change', { bubbles: true }));
       const w: any = window;
@@ -199,36 +195,51 @@ async function goToMonth(frame: Frame, year: number, month1: number): Promise<bo
         try { w.jQuery(dateInput).trigger('change'); w.jQuery(dateInput).change(); } catch {}
       }
       dateInput.blur();
-      return { ok: true, anterior, nuevo };
-    }, { y: year, m: month1 });
+      return { ok: true };
+    }, objetivo);
 
     if (!(res as any)?.ok) {
-      log.warning(`goToMonth ${objetivo}: ${(res as any)?.reason}`);
+      log.warning(`goToFecha ${objetivo}: ${(res as any)?.reason}`);
       return false;
     }
 
-    // Dar tiempo al re-render, creciente en cada reintento
     await new Promise((r) => setTimeout(r, 1500 * intento));
 
-    // VERIFICAR que el planning está realmente en el mes pedido
-    const verif = await frame.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
-      const di = inputs.find(
-        (i) => i.offsetParent !== null && /^\d{2}\/\d{2}\/\d{4}$/.test(i.value),
-      );
-      return di ? di.value : null;
-    });
-
-    if (typeof verif === 'string') {
-      const [, mm, yyyy] = verif.split('/');
-      if (`${mm}/${yyyy}` === objetivo) {
-        log.info(`Planning en ${objetivo} (intento ${intento})`);
-        return true;
-      }
-      log.warning(`goToMonth ${objetivo}: el planning muestra ${mm}/${yyyy} (intento ${intento})`);
+    // Verificar contra la REJILLA, no contra el input. El input se puede
+    // escribir sin que el planning llegue a repintarse, y entonces
+    // escrapeábamos el mes anterior creyendo estar en el nuevo.
+    const rango = await rangoVisible(frame);
+    if (rango && rango.desde <= iso && iso <= rango.hasta) {
+      log.info(`Planning en ${objetivo} · ventana ${rango.desde}..${rango.hasta} (intento ${intento})`);
+      return true;
     }
+    log.warning(`goToFecha ${objetivo}: la rejilla muestra ${rango ? rango.desde + '..' + rango.hasta : 'nada'} (intento ${intento})`);
   }
   return false;
+}
+
+/**
+ * Primer y último día que el planning tiene pintados ahora mismo.
+ *
+ * Importa porque la rejilla NO muestra un mes entero: enseña una ventana de
+ * ancho variable (unos 20 días con la ventana del navegador del robot). Al
+ * recorrer el histórico mes a mes situándonos en el día 01, los días finales
+ * de cada mes no se leían nunca: la reserva de Ignacio Sanchis del 29 al 31
+ * de julio de 2026 no entró en ninguna pasada, y seguía en la base con el
+ * dato obsoleto de julio. Por eso ahora se recorre por quincenas.
+ */
+async function rangoVisible(frame: Frame): Promise<{ desde: string; hasta: string } | null> {
+  const r = await frame
+    .evaluate(() => {
+      const fechas = Array.from(document.querySelectorAll('div.reserva'))
+        .map((e) => e.getAttribute('fecha_inicio') || e.getAttribute('fecha') || '')
+        .filter((f) => /^\d{4}-\d{2}-\d{2}$/.test(f))
+        .sort();
+      if (!fechas.length) return null;
+      return { desde: fechas[0], hasta: fechas[fechas.length - 1] };
+    })
+    .catch(() => null);
+  return r;
 }
 
 async function clickPrevMonth(frame: Frame): Promise<boolean> {
@@ -559,16 +570,28 @@ export async function scrapePlanning(
   // Antes se retrocedía con N clicks relativos y luego se avanzaba: si un solo
   // salto fallaba en silencio, el resto del recorrido quedaba desplazado y los
   // meses pasados no se releían nunca.
+  // PASOS DE 14 DÍAS, no de un mes.
+  //
+  // La rejilla del planning no muestra un mes entero sino una ventana de unos
+  // 20 días. Situándonos en el día 01 de cada mes, los días 21 al 31 no se
+  // leían nunca. Con saltos de 14 días cualquier ventana razonable solapa con
+  // la siguiente y no queda ningún hueco. El coste extra es solo de
+  // navegación: las reservas ya vistas no se vuelven a abrir.
   const hoy = new Date();
-  const objetivos: Array<{ year: number; month1: number }> = [];
-  for (let off = -options.monthsBack; off < options.monthsAhead; off++) {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() + off, 1);
-    objetivos.push({ year: d.getFullYear(), month1: d.getMonth() + 1 });
+  const desde = new Date(hoy.getFullYear(), hoy.getMonth() - options.monthsBack, 1);
+  const hasta = new Date(hoy.getFullYear(), hoy.getMonth() + options.monthsAhead, 1);
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const objetivos: string[] = [];
+  for (let d = new Date(desde); d < hasta; d.setDate(d.getDate() + 14)) {
+    objetivos.push(iso(d));
   }
   const totalMonths = objetivos.length;
-  log.info(
-    `Meses objetivo (${totalMonths}): ${objetivos.map((o) => `${String(o.month1).padStart(2, '0')}/${o.year}`).join(', ')}`,
-  );
+  log.info(`Ventanas objetivo (${totalMonths}): ${objetivos[0]} … ${objetivos[totalMonths - 1]}`);
+
+  // Una reserva solo se abre UNA vez por ejecución, aunque aparezca en varias
+  // ventanas solapadas.
+  const yaVistas = new Set<string>();
 
   // PRESUPUESTO DE TIEMPO — el sync horario tenía timeout de 300s y TODAS las
   // ejecuciones morían como TIMED-OUT. Ahora paramos limpiamente antes del
@@ -587,20 +610,18 @@ export async function scrapePlanning(
   for (let m = 0; m < totalMonths; m++) {
     if (tiempoAgotado()) {
       cortadoPorTiempo = true;
-      log.warning(`Presupuesto de tiempo agotado antes del mes ${m + 1}/${totalMonths} — cierre limpio con ${monthsScraped} meses persistidos`);
+      log.warning(`Presupuesto de tiempo agotado antes de la ventana ${m + 1}/${totalMonths} — cierre limpio con ${monthsScraped} ventanas persistidas`);
       break;
     }
     let fallosModalSeguidos = 0;
-    const objetivo = objetivos[m];
-    const etiquetaMes = `${String(objetivo.month1).padStart(2, '0')}/${objetivo.year}`;
-    log.info(`-- Scraping month ${m + 1}/${totalMonths} (${etiquetaMes}) --`);
+    const etiquetaMes = objetivos[m];
+    log.info(`-- Ventana ${m + 1}/${totalMonths} (desde ${etiquetaMes}) --`);
     const reservasBeforeMonth = reservas.length;
 
     frame = await getMainFrame(page);
-    const enMes = await goToMonth(frame, objetivo.year, objetivo.month1);
+    const enMes = await goToFecha(frame, etiquetaMes);
     if (!enMes) {
-      // Nunca escrapeamos "el mes que toque estar": o es el correcto o se salta.
-      errors.push({ step: 'goToMonth', error: `no se pudo situar el planning en ${etiquetaMes}`, reservaIndex: m });
+      errors.push({ step: 'goToFecha', error: `no se pudo situar el planning en ${etiquetaMes}`, reservaIndex: m });
       log.warning(`Saltando ${etiquetaMes}: navegación no verificada`);
       continue;
     }
@@ -612,13 +633,15 @@ export async function scrapePlanning(
       await options.saveScreenshot(`month-${m}-overview.png`, buf as Buffer);
     }
 
-    const refs = await getReservaRefs(frame);
-    log.info(`Month ${m + 1}: ${refs.length} reservas únicas`);
+    const todas = await getReservaRefs(frame);
+    const refs = todas.filter((r) => !yaVistas.has(r.idReserva));
+    for (const r of refs) yaVistas.add(r.idReserva);
+    log.info(`Ventana ${m + 1}: ${todas.length} reservas en pantalla, ${refs.length} nuevas`);
 
     for (let i = 0; i < refs.length; i++) {
       if (tiempoAgotado()) {
         cortadoPorTiempo = true;
-        log.warning(`Presupuesto de tiempo agotado en el mes ${m + 1} tras ${i}/${refs.length} reservas`);
+        log.warning(`Presupuesto de tiempo agotado en la ventana ${m + 1} tras ${i}/${refs.length} reservas`);
         break;
       }
       let modalFrame: Frame | null = null;
@@ -633,7 +656,7 @@ export async function scrapePlanning(
           if (fallosModalSeguidos >= MAX_FALLOS_MODAL) {
             modalRoto = true;
             log.error(
-              `MODAL_NO_ABRE: ${fallosModalSeguidos} fichas seguidas sin abrir en ${etiquetaMes}. ` +
+              `MODAL_NO_ABRE: ${fallosModalSeguidos} fichas seguidas sin abrir desde ${etiquetaMes}. ` +
               'Se aborta: lo más probable es que haya cambiado el DOM del planning de MisterPlan.',
             );
             errors.push({ step: 'openModal', error: `MODAL_NO_ABRE tras ${fallosModalSeguidos} intentos`, reservaIndex: i });
@@ -677,12 +700,12 @@ export async function scrapePlanning(
     }
 
     if (modalRoto) {
-      log.error('Abortando el resto de meses: el planning no abre fichas.');
+      log.error('Abortando el resto de ventanas: el planning no abre fichas.');
       break;
     }
     if (cortadoPorTiempo) break;
     // Ya no se avanza de forma relativa: la próxima iteración se sitúa sola
-    // en su mes objetivo con goToMonth().
+    // en su ventana objetivo con goToFecha().
   }
 
   // Deduplicar por id_reserva + habitación (multi-room: una fila por habitación; cruces de mes)
