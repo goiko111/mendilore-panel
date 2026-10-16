@@ -205,15 +205,34 @@ async function goToFecha(frame: Frame, iso: string): Promise<boolean> {
 
     await new Promise((r) => setTimeout(r, 1500 * intento));
 
-    // Verificar contra la REJILLA, no contra el input. El input se puede
-    // escribir sin que el planning llegue a repintarse, y entonces
-    // escrapeábamos el mes anterior creyendo estar en el nuevo.
+    // Doble comprobación: el input dice la fecha pedida Y la rejilla está
+    // pintada en torno a ella.
+    //
+    // No basta con exigir que la ventana CONTENGA la fecha objetivo: el rango
+    // se deduce de las reservas pintadas, y si no hay ninguna reservada ese
+    // día concreto el planning está bien situado pero la comprobación falla.
+    // Eso nos hizo saltarnos tres ventanas de temporada baja.
+    const verif = await frame.evaluate(() => {
+      const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
+      const di = inputs.find(
+        (i) => i.offsetParent !== null && /^\d{2}\/\d{2}\/\d{4}$/.test(i.value),
+      );
+      return di ? di.value : null;
+    });
     const rango = await rangoVisible(frame);
-    if (rango && rango.desde <= iso && iso <= rango.hasta) {
-      log.info(`Planning en ${objetivo} · ventana ${rango.desde}..${rango.hasta} (intento ${intento})`);
+    const cerca =
+      !rango ||
+      (Math.abs(Date.parse(rango.desde) - Date.parse(iso)) < 20 * 864e5 &&
+        Date.parse(rango.hasta) >= Date.parse(iso) - 20 * 864e5);
+    if (verif === objetivo && cerca) {
+      log.info(
+        `Planning en ${objetivo}${rango ? ` · ventana ${rango.desde}..${rango.hasta}` : ' · sin reservas'} (intento ${intento})`,
+      );
       return true;
     }
-    log.warning(`goToFecha ${objetivo}: la rejilla muestra ${rango ? rango.desde + '..' + rango.hasta : 'nada'} (intento ${intento})`);
+    log.warning(
+      `goToFecha ${objetivo}: input=${verif ?? '?'} rejilla=${rango ? rango.desde + '..' + rango.hasta : 'vacía'} (intento ${intento})`,
+    );
   }
   return false;
 }
@@ -602,6 +621,8 @@ export async function scrapePlanning(
   const RESERVA_MARGEN_MS = 75_000;
   /** Fichas seguidas sin abrir antes de dar el planning por roto. */
   const MAX_FALLOS_MODAL = 5;
+  /** Ventanas consecutivas en las que no se pudo abrir ninguna ficha. */
+  let ventanasSeguidasRotas = 0;
   let modalRoto = false;
   let cortadoPorTiempo = false;
   const tiempoAgotado = () =>
@@ -654,18 +675,27 @@ export async function scrapePlanning(
           // intentando las 60 restantes solo quema tiempo y créditos: en una
           // ejecución real esto costó 44 minutos por mes sin extraer nada.
           if (fallosModalSeguidos >= MAX_FALLOS_MODAL) {
-            modalRoto = true;
-            log.error(
+            // Se abandona ESTA ventana, no el run. Las reservas que no se
+            // hayan abierto aquí volverán a aparecer en la ventana siguiente,
+            // que solapa 10 días. Solo se da el planning por roto si fallan
+            // varias ventanas seguidas enteras.
+            ventanasSeguidasRotas++;
+            log.warning(
               `MODAL_NO_ABRE: ${fallosModalSeguidos} fichas seguidas sin abrir desde ${etiquetaMes}. ` +
-              'Se aborta: lo más probable es que haya cambiado el DOM del planning de MisterPlan.',
+              `Se abandona esta ventana (${ventanasSeguidasRotas} seguidas).`,
             );
             errors.push({ step: 'openModal', error: `MODAL_NO_ABRE tras ${fallosModalSeguidos} intentos`, reservaIndex: i });
+            if (ventanasSeguidasRotas >= 3) {
+              modalRoto = true;
+              log.error('MODAL_NO_ABRE: tres ventanas seguidas sin abrir ninguna ficha. Se aborta.');
+            }
             break;
           }
           continue;
         }
 
         fallosModalSeguidos = 0;
+        ventanasSeguidasRotas = 0;
         const parsed = await parseModalReserva(modalFrame, {
           debugComplementarios: options.debugComplementarios === true,
         });
