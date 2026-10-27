@@ -94,6 +94,13 @@ export async function POST(request: Request) {
     return reconciliar(supabase, payload as unknown as FinPasada);
   }
 
+  // Fechas del scraper de competencia (ver refrescarFechasCompetencia())
+  if ((payload as any).tipo === "refrescar_competencia") {
+    const r = await refrescarFechasCompetencia();
+    await supabase.from("logs_actividad").insert({ evento: "competencia_fechas_refrescadas", detalles: r });
+    return NextResponse.json(r, { status: r.ok ? 200 : 207 });
+  }
+
   let insertadas = 0;
   let actualizadas = 0;
   const errores: Array<{ id_reserva: string; error: string }> = [];
@@ -301,6 +308,82 @@ async function reconciliar(supabase: ReturnType<typeof createAdminClient>, p: Fi
 
   await supabase.from("logs_actividad").insert({ evento: "misterplan_reconciliacion", detalles: resumen });
   return NextResponse.json({ ok: true, aplicada: true, ...resumen });
+}
+
+/**
+ * FECHAS DEL SCRAPER DE COMPETENCIA
+ *
+ * El schedule de Apify que lanza voyager/booking-scraper tenía las fechas de
+ * entrada escritas a mano en junio (15/06, 22/06, 08/07, 07/08, 06/09, 06/10,
+ * 05/12 y 08/06/2027). Desde el verano consultaba precios de fechas ya
+ * pasadas y la pantalla de Competencia salía casi entera en "Sin precio".
+ *
+ * Cada noche el robot de MisterPlan llama aquí y se reescriben las URLs con
+ * entradas relativas a hoy. Los hoteles se conservan tal cual estaban en el
+ * schedule y se añaden los de la tabla competidores que falten.
+ */
+const SCHEDULE_COMPETENCIA = "rbYMVODnDmGh8zdtX";
+const DIAS_VISTA = [7, 14, 30, 60, 90, 180];
+const NOCHES_VISTA = 3;
+
+async function refrescarFechasCompetencia(): Promise<Record<string, unknown> & { ok: boolean }> {
+  const token = process.env.APIFY_TOKEN;
+  if (!token) return { ok: false, error: "APIFY_TOKEN no configurado en el panel" };
+  const base = "https://api.apify.com/v2";
+  const auth = { Authorization: `Bearer ${token}` };
+
+  const r = await fetch(`${base}/schedules/${SCHEDULE_COMPETENCIA}`, { headers: auth });
+  if (!r.ok) return { ok: false, error: `leer schedule: HTTP ${r.status}` };
+  const sched = (await r.json())?.data;
+  const accion = sched?.actions?.[0];
+  if (!accion?.runInput?.body) return { ok: false, error: "schedule sin input" };
+
+  const body = JSON.parse(accion.runInput.body);
+  const slugs = new Set<string>();
+  for (const u of body.startUrls ?? []) {
+    const m = String(u?.url ?? "").match(/\/hotel\/es\/([^.?/]+)/);
+    if (m) slugs.add(m[1]);
+  }
+  try {
+    const supabase = createAdminClient();
+    const { data: comps } = await supabase
+      .from("competidores")
+      .select("booking_slug, booking_url, activo, es_propia")
+      .eq("activo", true);
+    for (const c of comps ?? []) {
+      if ((c as any).es_propia) continue; // nuestro propio precio sale de las reservas reales
+      const m = String((c as any).booking_url ?? "").match(/\/hotel\/es\/([^.?/]+)/);
+      const slug = (c as any).booking_slug || (m ? m[1] : null);
+      if (slug) slugs.add(slug);
+    }
+  } catch { /* nos quedamos con los del schedule */ }
+  if (slugs.size === 0) return { ok: false, error: "no hay hoteles en el schedule" };
+
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const startUrls: Array<{ url: string }> = [];
+  const entradas: string[] = [];
+  for (const dias of DIAS_VISTA) {
+    const ci = new Date();
+    ci.setUTCDate(ci.getUTCDate() + dias);
+    const co = new Date(ci);
+    co.setUTCDate(co.getUTCDate() + NOCHES_VISTA);
+    entradas.push(iso(ci));
+    for (const slug of slugs) {
+      startUrls.push({
+        url: `https://www.booking.com/hotel/es/${slug}.html?checkin=${iso(ci)}&checkout=${iso(co)}&group_adults=2&no_rooms=1&group_children=0`,
+      });
+    }
+  }
+  body.startUrls = startUrls;
+  accion.runInput.body = JSON.stringify(body);
+
+  const put = await fetch(`${base}/schedules/${SCHEDULE_COMPETENCIA}`, {
+    method: "PUT",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ actions: sched.actions }),
+  });
+  if (!put.ok) return { ok: false, error: `escribir schedule: HTTP ${put.status}` };
+  return { ok: true, hoteles: Array.from(slugs), entradas, urls: startUrls.length };
 }
 
 // GET para healthcheck rápido

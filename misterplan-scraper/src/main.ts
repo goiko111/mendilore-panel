@@ -204,6 +204,21 @@ async function main() {
     );
   }
 
+  // Pasadas nocturnas y semanales: refrescar las fechas del scraper de
+  // competencia (el panel reescribe su schedule con entradas relativas a hoy).
+  if (monthsBack >= 3) {
+    try {
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-misterplan-secret': webhookSecret },
+        body: JSON.stringify({ source: 'misterplan', tipo: 'refrescar_competencia' }),
+      });
+      log.info(`Fechas de competencia (${res.status}): ${(await res.text()).slice(0, 300)}`);
+    } catch (e) {
+      log.warning(`No se pudieron refrescar las fechas de competencia: ${(e as Error).message}`);
+    }
+  }
+
   log.info(`✓ Run complete · ${reservas.length} reservas · ${errors.length} errors · session refreshed=${sessionRefreshed}`);
   await Actor.exit();
 }
