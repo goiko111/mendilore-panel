@@ -41,6 +41,7 @@ async function main() {
     webhookSecret,
     monthsAhead = 1, // sync horario: SOLO el mes actual — con 2 el presupuesto de tiempo lo cortaba siempre
     debugComplementarios = false,
+    reconciliar = false,
     monthsBack = 0,
     headless = true,
     debug = false,
@@ -194,6 +195,7 @@ async function main() {
       hasta: reconciliacion.hasta,
       vistas: reservas.map((r) => ({ id: r.id_reserva, hab: r.habitacion })),
       fallidas: reconciliacion.fallidas,
+      simular: !reconciliar,
     });
   } else if (reconciliacion) {
     log.warning(

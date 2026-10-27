@@ -143,6 +143,7 @@ export async function postFinPasada(
     hasta: string;
     vistas: Array<{ id: string; hab: string }>;
     fallidas: Array<{ fecha_inicio: string; fecha_fin: string }>;
+    simular: boolean;
   },
 ): Promise<WebhookResponse> {
   const cuerpo = JSON.stringify({ source: 'misterplan', tipo: 'fin_pasada', scrapedAt: new Date().toISOString(), ...datos });
@@ -155,7 +156,7 @@ export async function postFinPasada(
       });
       const body = await res.text();
       if (res.ok) {
-        log.info(`Reconciliación (${res.status}) — ${body.slice(0, 300)}`);
+        log.info(`Reconciliación${datos.simular ? ' SIMULADA' : ''} (${res.status}) — ${body.slice(0, 3000)}`);
         return { ok: res.status === 200, status: res.status, body, attempts: intento };
       }
       log.warning(`Reconciliación HTTP ${res.status}: ${body.slice(0, 200)}`);

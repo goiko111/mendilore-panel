@@ -37,6 +37,12 @@ export interface ActorInput {
   debug?: boolean;
   /** Loguea las líneas con importe del modal cuando no se extrae ningún complementario */
   debugComplementarios?: boolean;
+  /**
+   * Aplicar la reconciliación al final de una pasada completa (marcar como
+   * anuladas las filas que MisterPlan ya no muestra). Si es false, el panel
+   * solo SIMULA: calcula y registra qué marcaría, sin tocar nada.
+   */
+  reconciliar?: boolean;
 }
 
 export interface ReservaScraped {

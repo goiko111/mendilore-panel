@@ -205,6 +205,8 @@ type FinPasada = {
   hasta: string;   // YYYY-MM-DD · límite del recorrido
   vistas: Array<{ id: string; hab: string }>;
   fallidas: Array<{ fecha_inicio: string; fecha_fin: string }>;
+  /** true = calcular y registrar, sin marcar nada */
+  simular?: boolean;
 };
 
 const HABITACIONES = ["cala", "nube", "margarita", "lino", "limonero", "lavanda"];
@@ -278,6 +280,11 @@ async function reconciliar(supabase: ReturnType<typeof createAdminClient>, p: Fi
       id: r.id_externo_misterplan, habitacion: r.habitacion, entrada: r.fecha_in, salida: r.fecha_out, total: r.importe_total,
     })),
   };
+
+  if (p.simular) {
+    await supabase.from("logs_actividad").insert({ evento: "misterplan_reconciliacion_simulada", detalles: resumen });
+    return NextResponse.json({ ok: true, aplicada: false, simulada: true, ...resumen });
+  }
 
   if (candidatas.length > tope) {
     await supabase.from("logs_actividad").insert({ evento: "misterplan_reconciliacion_abortada", detalles: resumen });
