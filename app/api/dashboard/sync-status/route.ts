@@ -28,6 +28,31 @@ export async function GET() {
     } catch {}
   }
 
+  // Si después de la última sincronización buena hubo un fallo grave
+  // (muchas reservas rechazadas), avisarlo aunque la hora parezca reciente.
+  try {
+    const { data: g } = await supabase
+      .from("logs_actividad")
+      .select("ocurrido_en, detalles")
+      .eq("evento", "misterplan_sync_error_grave")
+      .order("ocurrido_en", { ascending: false })
+      .limit(1);
+    const ultimoGrave = g?.[0];
+    // Comparar con la última pasada SIN errores: el webhook registra el fallo
+    // grave y justo después un "parcial", así que contra ese no sirve.
+    const { data: okRows } = await supabase
+      .from("logs_actividad")
+      .select("ocurrido_en")
+      .eq("evento", "misterplan_sync_ok")
+      .order("ocurrido_en", { ascending: false })
+      .limit(1);
+    const ultimoOk = okRows?.[0]?.ocurrido_en ?? null;
+    if (ultimoGrave && (!ultimoOk || ultimoGrave.ocurrido_en > ultimoOk)) {
+      const msg = (ultimoGrave.detalles as any)?.mensaje ?? "muchas reservas rechazadas";
+      alertas.push(`La última sincronización con MisterPlan tuvo errores: ${msg}.`);
+    }
+  } catch {}
+
   let ultima_sync_competencia: string | null = null;
   try {
     const { data: r } = await supabase

@@ -124,3 +124,45 @@ export async function postToWebhook(
 
   return { ok: false, status: 0, body: lastErr, attempts: maxAttempts };
 }
+
+
+/**
+ * Aviso de fin de pasada completa, para que el panel reconcilie.
+ *
+ * El robot solo inserta y actualiza: si MisterPlan anula una reserva o la
+ * cambia de habitación, la fila vieja se quedaba en la base contando noches e
+ * ingresos (llegó a haber 20 habitación-noche ocupadas dos veces). Con esta
+ * lista el panel marca como anuladas las filas del rango recorrido que ya no
+ * aparecen, salvo las que se solapan con fichas que no se pudieron leer.
+ */
+export async function postFinPasada(
+  url: string,
+  secret: string,
+  datos: {
+    desde: string;
+    hasta: string;
+    vistas: Array<{ id: string; hab: string }>;
+    fallidas: Array<{ fecha_inicio: string; fecha_fin: string }>;
+  },
+): Promise<WebhookResponse> {
+  const cuerpo = JSON.stringify({ source: 'misterplan', tipo: 'fin_pasada', scrapedAt: new Date().toISOString(), ...datos });
+  for (let intento = 1; intento <= 3; intento++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-misterplan-secret': secret, 'User-Agent': 'misterplan-scraper/1.0 (Apify Actor)' },
+        body: cuerpo,
+      });
+      const body = await res.text();
+      if (res.ok) {
+        log.info(`Reconciliación (${res.status}) — ${body.slice(0, 300)}`);
+        return { ok: res.status === 200, status: res.status, body, attempts: intento };
+      }
+      log.warning(`Reconciliación HTTP ${res.status}: ${body.slice(0, 200)}`);
+    } catch (e) {
+      log.warning(`Reconciliación intento ${intento} falló: ${(e as Error).message}`);
+    }
+    await new Promise((r) => setTimeout(r, 1000 * 3 ** (intento - 1)));
+  }
+  return { ok: false, status: 0, body: '', attempts: 3 };
+}

@@ -89,6 +89,11 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
 
+  // Fin de pasada completa: reconciliar (ver reconciliar() más abajo)
+  if ((payload as any).tipo === "fin_pasada") {
+    return reconciliar(supabase, payload as unknown as FinPasada);
+  }
+
   let insertadas = 0;
   let actualizadas = 0;
   const errores: Array<{ id_reserva: string; error: string }> = [];
@@ -191,6 +196,104 @@ export async function POST(request: Request) {
     },
     { status: falloGrave ? 207 : 200 },
   );
+}
+
+type FinPasada = {
+  tipo: "fin_pasada";
+  scrapedAt: string;
+  desde: string;   // YYYY-MM-DD · primer día recorrido
+  hasta: string;   // YYYY-MM-DD · límite del recorrido
+  vistas: Array<{ id: string; hab: string }>;
+  fallidas: Array<{ fecha_inicio: string; fecha_fin: string }>;
+};
+
+const HABITACIONES = ["cala", "nube", "margarita", "lino", "limonero", "lavanda"];
+
+/**
+ * RECONCILIACIÓN TRAS UNA PASADA COMPLETA
+ *
+ * El robot solo inserta y actualiza. Si en MisterPlan se anula una reserva o
+ * se cambia de habitación, la fila vieja se quedaba aquí contando noches e
+ * ingresos: llegó a haber 20 habitación-noche ocupadas dos veces y días con
+ * más reservas que habitaciones.
+ *
+ * Al terminar una pasada que ha recorrido TODO un rango de fechas, el robot
+ * manda la lista de (reserva, habitación) que ha visto. Las filas activas de
+ * ese rango que no están en la lista ya no existen en MisterPlan y se marcan
+ * como anuladas. No se borra nada: si la reserva vuelve a aparecer, el upsert
+ * la reactiva con su estado real.
+ *
+ * Salvaguardas (este proyecto ya estuvo a punto de borrar 452 reservas buenas
+ * con un criterio parecido):
+ *   · se excluye toda fila que se solape con una ficha que no se pudo leer;
+ *   · si salen más candidatas que el tope, no se toca NADA y queda registrado.
+ */
+async function reconciliar(supabase: ReturnType<typeof createAdminClient>, p: FinPasada) {
+  const desde = String(p.desde || "");
+  const hasta = String(p.hasta || "");
+  const vistas = Array.isArray(p.vistas) ? p.vistas : [];
+  const fallidas = Array.isArray(p.fallidas) ? p.fallidas : [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || vistas.length === 0) {
+    return NextResponse.json({ ok: false, error: "fin_pasada incompleto" }, { status: 400 });
+  }
+
+  const visto = new Set(vistas.map((v) => `${v.id}|${v.hab}`));
+
+  const filas: any[] = [];
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await supabase
+      .from("reservas")
+      .select("id, id_externo_misterplan, habitacion, fecha_in, fecha_out, importe_total")
+      .not("estado_reserva", "in", "(cancelada,no_show)")
+      .in("habitacion", HABITACIONES)
+      .lt("fecha_in", hasta)
+      .gt("fecha_out", desde)
+      .range(i, i + 999);
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    filas.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+
+  // fecha_fin del planning es la última noche: se suma un día por prudencia.
+  const masUnDia = (d: string) => {
+    const x = new Date(d + "T00:00:00Z");
+    x.setUTCDate(x.getUTCDate() + 1);
+    return x.toISOString().slice(0, 10);
+  };
+  const protegida = (r: any) =>
+    fallidas.some((f) => f.fecha_inicio && f.fecha_fin && r.fecha_in < masUnDia(f.fecha_fin) && r.fecha_out > f.fecha_inicio);
+
+  const noVistas = filas.filter((r) => !visto.has(`${r.id_externo_misterplan}|${r.habitacion}`));
+  const candidatas = noVistas.filter((r) => !protegida(r));
+  const tope = Math.max(10, Math.ceil(filas.length * 0.1));
+  const resumen = {
+    rango: `${desde}..${hasta}`,
+    filas_en_rango: filas.length,
+    vistas_por_el_robot: vistas.length,
+    no_vistas: noVistas.length,
+    protegidas_por_fallo_de_lectura: noVistas.length - candidatas.length,
+    candidatas: candidatas.length,
+    tope,
+    detalle: candidatas.slice(0, 60).map((r) => ({
+      id: r.id_externo_misterplan, habitacion: r.habitacion, entrada: r.fecha_in, salida: r.fecha_out, total: r.importe_total,
+    })),
+  };
+
+  if (candidatas.length > tope) {
+    await supabase.from("logs_actividad").insert({ evento: "misterplan_reconciliacion_abortada", detalles: resumen });
+    return NextResponse.json({ ok: false, aplicada: false, motivo: "demasiadas candidatas", ...resumen }, { status: 207 });
+  }
+
+  if (candidatas.length > 0) {
+    const { error } = await supabase
+      .from("reservas")
+      .update({ estado_reserva: "cancelada", actualizado_en: new Date().toISOString() })
+      .in("id", candidatas.map((r) => r.id));
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+
+  await supabase.from("logs_actividad").insert({ evento: "misterplan_reconciliacion", detalles: resumen });
+  return NextResponse.json({ ok: true, aplicada: true, ...resumen });
 }
 
 // GET para healthcheck rápido

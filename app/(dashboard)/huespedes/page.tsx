@@ -78,7 +78,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   const { data: todasReservas } = await supabase
     .from("reservas")
     .select("huesped_id, fecha_in, fecha_out, noches, importe_total, estado_cobro, id_externo_misterplan")
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .limit(5000);
 
   // Mapa huesped_id → { reservas, noches, gasto, ultimaFechaIn, primeraFechaIn }

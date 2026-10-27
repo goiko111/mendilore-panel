@@ -42,6 +42,18 @@ export interface ScrapeResult {
   reservas: ReservaScraped[];
   errors: ScrapingError[];
   monthsScraped: number;
+  /**
+   * Datos para reconciliar al final: qué rango se ha recorrido entero y qué
+   * reservas se vieron en pantalla pero no se pudieron leer. Con esto el
+   * panel puede marcar como anuladas las filas que MisterPlan ya no muestra
+   * sin arriesgarse a tocar las que simplemente fallaron.
+   */
+  reconciliacion: {
+    completa: boolean;
+    desde: string;
+    hasta: string;
+    fallidas: Array<{ fecha_inicio: string; fecha_fin: string }>;
+  };
 }
 
 /**
@@ -336,7 +348,7 @@ async function clickPrevMonth(frame: Frame): Promise<boolean> {
  * habitaciones. En una vista de octubre 2026 eso son 96 elementos para solo
  * 14 reservas reales: abríamos la misma ficha siete veces.
  */
-type ReservaRef = { domId: string; idReserva: string };
+type ReservaRef = { domId: string; idReserva: string; fechaInicio: string; fechaFin: string };
 
 /**
  * Una entrada por reserva real: sin clones fantasma, sin repetir días.
@@ -346,7 +358,7 @@ type ReservaRef = { domId: string; idReserva: string };
 async function getReservaRefs(frame: Frame): Promise<ReservaRef[]> {
   const refs: ReservaRef[] = await frame
     .evaluate(() => {
-      const out: Array<{ domId: string; idReserva: string }> = [];
+      const out: Array<{ domId: string; idReserva: string; fechaInicio: string; fechaFin: string }> = [];
       const vistos = new Set<string>();
       const els = Array.from(document.querySelectorAll('div.reserva')) as HTMLElement[];
       for (const el of els) {
@@ -363,7 +375,12 @@ async function getReservaRefs(frame: Frame): Promise<ReservaRef[]> {
         const clave = idReserva || el.id;
         if (!clave || vistos.has(clave)) continue;              // mismo id en varios días
         vistos.add(clave);
-        if (el.id) out.push({ domId: el.id, idReserva });
+        if (el.id) out.push({
+          domId: el.id,
+          idReserva,
+          fechaInicio: el.getAttribute('fecha_inicio') || el.getAttribute('fecha') || '',
+          fechaFin: el.getAttribute('fecha_fin') || el.getAttribute('fecha') || '',
+        });
       }
       return out;
     })
@@ -628,8 +645,12 @@ export async function scrapePlanning(
   log.info(`Ventanas objetivo (${totalMonths}): ${objetivos[0]} … ${objetivos[totalMonths - 1]}`);
 
   // Una reserva solo se abre UNA vez por ejecución, aunque aparezca en varias
-  // ventanas solapadas.
-  const yaVistas = new Set<string>();
+  // ventanas solapadas. Las que fallan se reintentan en la ventana siguiente
+  // (solapan ~10 días), hasta dos intentos.
+  const exitosas = new Set<string>();
+  const intentos = new Map<string, number>();
+  const fallidas = new Map<string, { fecha_inicio: string; fecha_fin: string }>();
+  let ventanasSaltadas = 0;
 
   // PRESUPUESTO DE TIEMPO — el sync horario tenía timeout de 300s y TODAS las
   // ejecuciones morían como TIMED-OUT. Ahora paramos limpiamente antes del
@@ -663,6 +684,7 @@ export async function scrapePlanning(
     if (!enMes) {
       errors.push({ step: 'goToFecha', error: `no se pudo situar el planning en ${etiquetaMes}`, reservaIndex: m });
       log.warning(`Saltando ${etiquetaMes}: navegación no verificada`);
+      ventanasSaltadas++;
       continue;
     }
     await new Promise((r) => setTimeout(r, 1000));
@@ -680,9 +702,8 @@ export async function scrapePlanning(
       await new Promise((r) => setTimeout(r, 3000));
       todas = await getReservaRefs(frame);
     }
-    const refs = todas.filter((r) => !yaVistas.has(r.idReserva));
-    for (const r of refs) yaVistas.add(r.idReserva);
-    log.info(`Ventana ${m + 1}: ${todas.length} reservas en pantalla, ${refs.length} nuevas`);
+    const refs = todas.filter((r) => !exitosas.has(r.idReserva) && (intentos.get(r.idReserva) ?? 0) < 2);
+    log.info(`Ventana ${m + 1}: ${todas.length} reservas en pantalla, ${refs.length} por leer`);
 
     for (let i = 0; i < refs.length; i++) {
       if (tiempoAgotado()) {
@@ -691,9 +712,14 @@ export async function scrapePlanning(
         break;
       }
       let modalFrame: Frame | null = null;
+      const ref = refs[i];
+      intentos.set(ref.idReserva, (intentos.get(ref.idReserva) ?? 0) + 1);
+      const marcarFallida = () =>
+        fallidas.set(ref.idReserva, { fecha_inicio: ref.fechaInicio, fecha_fin: ref.fechaFin });
       try {
-        modalFrame = await openReservaModal(frame, refs[i], options.debug);
+        modalFrame = await openReservaModal(frame, ref, options.debug);
         if (!modalFrame) {
+          marcarFallida();
           errors.push({ step: 'openModal', error: 'modal not visible', reservaIndex: i });
           fallosModalSeguidos++;
           // Si ninguna ficha abre, MisterPlan ha cambiado el planning. Seguir
@@ -726,10 +752,14 @@ export async function scrapePlanning(
         });
         if (parsed && parsed.length > 0) {
           reservas.push(...parsed);
+          exitosas.add(ref.idReserva);
+          fallidas.delete(ref.idReserva);
         } else {
+          marcarFallida();
           errors.push({ step: 'parseModal', error: 'parse returned null', reservaIndex: i });
         }
       } catch (err) {
+        marcarFallida();
         errors.push({
           step: 'iterateReserva',
           error: (err as Error).message,
@@ -769,10 +799,20 @@ export async function scrapePlanning(
     dedup.set(`${r.id_reserva}|${r.habitacion}`, r);
   }
 
+  const completa = !cortadoPorTiempo && !modalRoto && ventanasSaltadas === 0;
+  if (fallidas.size > 0) {
+    log.warning(`Reservas vistas en el planning que no se pudieron leer: ${fallidas.size}`);
+  }
   return {
     reservas: Array.from(dedup.values()),
     errors,
     monthsScraped,
+    reconciliacion: {
+      completa,
+      desde: iso(desde),
+      hasta: iso(hasta),
+      fallidas: Array.from(fallidas.values()),
+    },
   };
 }
 

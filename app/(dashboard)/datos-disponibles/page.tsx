@@ -36,7 +36,7 @@ const CATEGORIAS: { titulo: string; emoji: string; items: { dato: string; estado
       { dato: "Cobros vencen <7d / <14d / <30d", estado: "calculable", descripcion: "Filtro por fecha_in próxima + estado_cobro='pendiente'" },
       { dato: "Tasa de cobro (%)", estado: "calculable", descripcion: "Cobradas / totales del período" },
       { dato: "Cobros fallidos / reembolsados", estado: "disponible", descripcion: "Estados específicos en la tabla" },
-      { dato: "Ingresos diarios / mensuales", estado: "disponible", descripcion: "Vista materializada `metricas_dia.ingresos_dia`" },
+      { dato: "Ingresos diarios / mensuales", estado: "disponible", descripcion: "Vista `metricas_dia`, construida sobre `produccion_dia` (misma fuente en todas las pantallas)" },
       { dato: "ADR (Average Daily Rate)", estado: "calculable", descripcion: "Ingresos / noches vendidas" },
       { dato: "RevPAR", estado: "calculable", descripcion: "Ingresos / habitaciones disponibles" },
       { dato: "Pipeline futuro (importe confirmado)", estado: "calculable", descripcion: "Suma reservas futuras no canceladas" },

@@ -36,7 +36,7 @@ export default async function CalendarioPage({ searchParams }: { searchParams: P
     .from("reservas")
     .select("id, habitacion, fecha_in, fecha_out, importe_total, importe_moneda, huespedes(nombre, apellidos)")
     .or(`fecha_in.lte.${endStr},fecha_out.gte.${startStr}`)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .limit(500);
 
   // Mapa hab -> fecha -> reserva

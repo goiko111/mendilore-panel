@@ -21,7 +21,7 @@ export async function GET() {
     .select("id, fecha_in, estado_cobro", { count: "exact" })
     .gte("fecha_in", todayStr)
     .lt("fecha_in", tomorrow)
-    .neq("estado_cobro", "cancelado");
+    .not("estado_reserva", "in", "(cancelada,no_show)");
 
   // Query 3: eq directo
   const { data: q2, count: c2 } = await supabase

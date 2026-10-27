@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   // KPIs del mes
   const { data: metricas } = await supabase
     .from("metricas_dia")
-    .select("fecha, occupancy_pct, adr, revpar, ingresos_dia, habitaciones_ocupadas")
+    .select("*")
     .gte("fecha", firstDay)
     .lte("fecha", lastDay)
     .order("fecha", { ascending: true });
@@ -43,16 +43,23 @@ export async function GET(req: NextRequest) {
     .select("id, habitacion, fecha_in, fecha_out, noches, importe_total, canal, estado_cobro, huespedes(nombre, apellidos)")
     .gte("fecha_in", firstDay)
     .lte("fecha_in", lastDay)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .order("fecha_in", { ascending: true });
 
   // Agregados
-  const ingresos = (metricas ?? []).reduce((s, m) => s + Number(m.ingresos_dia ?? 0), 0);
-  const noches = (metricas ?? []).reduce((s, m) => s + Number(m.habitaciones_ocupadas ?? 0), 0);
-  const occMedia = metricas?.length ? metricas.reduce((s, m) => s + Number(m.occupancy_pct ?? 0), 0) / metricas.length : 0;
-  const adr = noches > 0 ? ingresos / noches : 0;
+  // Mismas fórmulas que Métricas y Comparativa YoY.
+  const ingresos = (metricas ?? []).reduce((s, m: any) => s + Number(m.ingresos_dia ?? 0), 0);
+  const alojamiento = (metricas ?? []).reduce((s, m: any) => s + Number(m.ingresos_alojamiento ?? m.ingresos_dia ?? 0), 0);
+  const noches = (metricas ?? []).reduce((s, m: any) => s + Number(m.habitaciones_ocupadas ?? 0), 0);
+  const occMedia = metricas?.length ? Math.min(100, (noches / (6 * metricas.length)) * 100) : 0;
+  const adr = noches > 0 ? alojamiento / noches : 0;
   const revpar = metricas?.length ? metricas.reduce((s, m) => s + Number(m.revpar ?? 0), 0) / metricas.length : 0;
-  const cancelaciones = (reservasMes ?? []).filter(r => r.estado_cobro === "cancelado").length;
+  const { count: cancelaciones } = await supabase
+    .from("reservas")
+    .select("id", { count: "exact", head: true })
+    .gte("fecha_in", firstDay)
+    .lte("fecha_in", lastDay)
+    .in("estado_reserva", ["cancelada", "no_show"]);
 
   // Channel mix
   const canalMap = new Map<string, { count: number; revenue: number }>();
@@ -119,7 +126,7 @@ export async function GET(req: NextRequest) {
     <div class="kpi"><div class="kpi-label">Ocupación media</div><div class="kpi-value">${fmtPct(occMedia)}</div><div class="kpi-hint">${noches} noches vendidas</div></div>
     <div class="kpi"><div class="kpi-label">ADR medio</div><div class="kpi-value">${fmtEur(adr)}</div><div class="kpi-hint">Tarifa por habitación</div></div>
     <div class="kpi"><div class="kpi-label">RevPAR medio</div><div class="kpi-value">${fmtEur(revpar)}</div><div class="kpi-hint">Ingreso/hab. disponible</div></div>
-    <div class="kpi"><div class="kpi-label">Ingresos mes</div><div class="kpi-value">${fmtEur(ingresos)}</div><div class="kpi-hint">${reservasMes?.length ?? 0} reservas · ${cancelaciones} canceladas</div></div>
+    <div class="kpi"><div class="kpi-label">Ingresos mes</div><div class="kpi-value">${fmtEur(ingresos)}</div><div class="kpi-hint">${reservasMes?.length ?? 0} reservas · ${cancelaciones ?? 0} canceladas</div></div>
   </div>
 
   <h2>Distribución por canal</h2>

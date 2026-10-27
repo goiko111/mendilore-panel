@@ -46,10 +46,14 @@ function normalizarCanal(s: string): Canal {
   if (t.includes('expedia')) return 'expedia';
   if (t.includes('vrbo') || t.includes('homeaway')) return 'expedia';
   if (t.includes('rural') && !t.includes('cloud')) return 'otro';
-  // Teléfono como canal propio (petición Juan jul 2026)
-  if (t.includes('tel') || t.includes('llamada') || t.includes('phone')) return 'telefono';
-  // Motor web propio — MrPlan lo llama "Cloud (Mi web)"
-  if (t.includes('cloud') || t.includes('mi web') || t.includes('web') || t.includes('propia')) return 'web_propia';
+  // Teléfono como canal propio (petición Juan jul 2026).
+  // En MisterPlan las reservas metidas a mano desde el backend salen como
+  // "Cloud" ("Cloud (Mi Web)" en la ficha), y su propio informe "Reservas por
+  // operador" las separa de "Mi Web" (el motor de reservas). Antes las
+  // contábamos como web propia, así que Teléfono no tenía ni una reserva.
+  if (t.includes('cloud') || t.includes('tel') || t.includes('llamada') || t.includes('phone')) return 'telefono';
+  // Motor de reservas propio
+  if (t.includes('mi web') || t.includes('web') || t.includes('propia')) return 'web_propia';
   // Presencial
   if (t.includes('walk') || t.includes('puerta') || t.includes('mostrador')) return 'walk_in';
   // Directo (email, manual sin especificar)

@@ -100,7 +100,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   // KPIs últimos N días (sin futuro)
   const { data: metricasPeriodo } = await supabase
     .from("metricas_dia")
-    .select("fecha, occupancy_pct, adr, revpar, ingresos_dia, habitaciones_ocupadas")
+    .select("*")
     .gte("fecha", desde)
     .lte("fecha", hasta)
     .lte("fecha", todayStr)
@@ -111,7 +111,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const hastaYA = new Date(today.getTime() - 365 * 86400_000).toISOString().slice(0, 10);
   const { data: metricasYA } = await supabase
     .from("metricas_dia")
-    .select("fecha, occupancy_pct, adr, ingresos_dia, habitaciones_ocupadas")
+    .select("*")
     .gte("fecha", desdeYA)
     .lte("fecha", hastaYA);
 
@@ -124,20 +124,25 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .order("fecha", { ascending: true });
 
   // Agregados último período
+  // Mismas fórmulas que la Comparativa YoY (api/metricas/rango-yoy): así las
+  // dos pantallas dan el mismo número para el mismo periodo.
+  //   · Ocupación = noches vendidas ÷ (6 habitaciones × días del periodo)
+  //   · ADR       = ingresos de ALOJAMIENTO ÷ noches vendidas (sin consumos)
+  const alojamientoDe = (m: any) => Number(m.ingresos_alojamiento ?? m.ingresos_dia ?? 0);
   const totalIngresos = (metricasPeriodo ?? []).reduce((sum, m) => sum + Number(m.ingresos_dia ?? 0), 0);
+  const totalAlojamiento = (metricasPeriodo ?? []).reduce((sum, m) => sum + alojamientoDe(m), 0);
   const totalNoches = (metricasPeriodo ?? []).reduce((sum, m) => sum + Number(m.habitaciones_ocupadas ?? 0), 0);
-  const occupancyMedia = metricasPeriodo?.length
-    ? (metricasPeriodo.reduce((sum, m) => sum + Number(m.occupancy_pct ?? 0), 0) / metricasPeriodo.length)
-    : 0;
-  const adrMedio = totalNoches > 0 ? totalIngresos / totalNoches : 0;
+  const diasPeriodo = Math.max(1, metricasPeriodo?.length ?? 0);
+  const occupancyMedia = Math.min(100, (totalNoches / (HABITACIONES_VALIDAS.length * diasPeriodo)) * 100);
+  const adrMedio = totalNoches > 0 ? totalAlojamiento / totalNoches : 0;
 
   // Comparativa año anterior
   const totalIngresosYA = (metricasYA ?? []).reduce((sum, m) => sum + Number(m.ingresos_dia ?? 0), 0);
+  const totalAlojamientoYA = (metricasYA ?? []).reduce((sum, m) => sum + alojamientoDe(m), 0);
   const totalNochesYA = (metricasYA ?? []).reduce((sum, m) => sum + Number(m.habitaciones_ocupadas ?? 0), 0);
-  const occupancyYA = metricasYA?.length
-    ? (metricasYA.reduce((sum, m) => sum + Number(m.occupancy_pct ?? 0), 0) / metricasYA.length)
-    : 0;
-  const adrYA = totalNochesYA > 0 ? totalIngresosYA / totalNochesYA : 0;
+  const diasYA = Math.max(1, metricasYA?.length ?? 0);
+  const occupancyYA = Math.min(100, (totalNochesYA / (HABITACIONES_VALIDAS.length * diasYA)) * 100);
+  const adrYA = totalNochesYA > 0 ? totalAlojamientoYA / totalNochesYA : 0;
 
   function varPct(now: number, before: number): string | null {
     if (!before || before === 0) return null;
@@ -161,10 +166,13 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const en90d = new Date(today.getTime() + 90 * 86400_000).toISOString().slice(0, 10);
 
   // Lead time: reservas CREADAS en el periodo · ALOS: reservas con CHECK-IN en el periodo
+  // Antelación con fecha_reserva (la fecha de reserva que da MisterPlan).
+  // Antes se usaba creado_en, que es cuándo el robot insertó la fila: tras
+  // cada recarga del histórico el resultado no tenía ningún sentido.
   const { data: leadRows } = await supabase
     .from("reservas")
-    .select("fecha_in, fecha_out, noches, creado_en, estado_cobro")
-    .gte("creado_en", hace90d)
+    .select("fecha_in, fecha_out, noches, fecha_reserva, estado_cobro")
+    .gte("fecha_reserva", hace90d)
     .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const { data: alosRows } = await supabase
@@ -175,9 +183,11 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const leadTimes = (leadRows ?? [])
+    // Si MisterPlan no dio fecha de reserva, el robot pone la de entrada: fuera.
+    .filter((r) => String(r.fecha_reserva ?? "").slice(0, 10) !== String(r.fecha_in))
     .map((r) => {
       const ci = new Date(r.fecha_in as string).getTime();
-      const ca = new Date(r.creado_en as string).getTime();
+      const ca = new Date(r.fecha_reserva as string).getTime();
       return (ci - ca) / 86400_000;
     })
     .filter((d) => d >= 0 && d <= 365);
@@ -189,12 +199,12 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   // Cancel rate: este mes natural
   const { data: mesRows } = await supabase
     .from("reservas")
-    .select("estado_cobro")
+    .select("estado_reserva")
     .gte("fecha_in", inicioMes)
     .lte("fecha_in", finMes)
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const totalMes = (mesRows ?? []).length;
-  const canceladasMes = (mesRows ?? []).filter((r) => r.estado_cobro === "cancelado").length;
+  const canceladasMes = (mesRows ?? []).filter((r) => r.estado_reserva === "cancelada" || r.estado_reserva === "no_show").length;
   const cancelRate = totalMes > 0 ? (canceladasMes / totalMes) * 100 : 0;
 
   // Pace 30/60/90: reservas futuras por ventana
@@ -203,7 +213,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .select("id, importe_total, fecha_in")
     .gte("fecha_in", todayStr)
     .lte("fecha_in", en90d)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const pace30 = (paceFuturasAll ?? []).filter(r => (r.fecha_in as string) <= en30d).length;
   const pace60 = (paceFuturasAll ?? []).filter(r => (r.fecha_in as string) <= en60d).length;
@@ -214,9 +224,9 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const { data: paceRows } = await supabase
     .from("reservas")
     .select("id, importe_total, fecha_in")
-    .gte("creado_en", hace7d)
+    .gte("fecha_reserva", hace7d)
     .gte("fecha_in", todayStr)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const paceCount = (paceRows ?? []).length;
   const paceRevenue = (paceRows ?? []).reduce((sum, r) => sum + Number(r.importe_total ?? 0), 0);
@@ -227,7 +237,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .select("canal, importe_total")
     .gte("fecha_in", hace30d)
     .lte("fecha_in", todayStr)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const canalMap = new Map<string, { count: number; revenue: number }>();
   (canalRows ?? []).forEach((r) => {
@@ -360,9 +370,9 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `Últimos ${lookbackDays} días`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "(noches reservadas ÷ noches disponibles totales) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
-        <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={hayComparativa ? `${varPct(adrMedio, adrYA) ?? "—"} vs año anterior` : `${totalNoches} noches`} tooltip={{ mide: "ADR (Average Daily Rate) — precio medio por habitación vendida en el periodo.", calculo: "ingresos totales del periodo ÷ noches vendidas", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
-        <StatCard label={`Ingresos ${lookbackDays}d`} value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} tooltip={{ mide: "Suma de los ingresos generados por reservas con check-in en el periodo.", calculo: "SUM(importe_total) WHERE fecha_in ∈ [periodo]", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `Últimos ${lookbackDays} días`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "noches vendidas ÷ (6 habitaciones × días del periodo) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={hayComparativa ? `${varPct(adrMedio, adrYA) ?? "—"} vs año anterior` : `${totalNoches} noches`} tooltip={{ mide: "ADR (Average Daily Rate) — precio medio por habitación vendida en el periodo.", calculo: "ingresos de alojamiento del periodo ÷ noches vendidas. Sin consumos ni extras.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label={`Ingresos ${lookbackDays}d`} value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} tooltip={{ mide: "Ingresos producidos en las noches del periodo seleccionado (alojamiento y consumos).", calculo: "Alojamiento repartido entre las noches de cada estancia + consumos en el día en que se hicieron, para las noches del periodo.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
         <StatCard label="Noches vendidas" value={String(totalNoches)} hint={hayComparativa ? `${varPct(totalNoches, totalNochesYA) ?? "—"} vs año anterior` : `De ${lookbackDays * 6} disponibles`} tooltip={{ mide: "Suma total de noches reservadas en el periodo.", calculo: "SUM(noches) sobre reservas confirmadas del periodo", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
       </div>
 
@@ -380,8 +390,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           hint={leadTimes.length > 0 ? `${leadTimes.length} reservas 90d` : "Esperando más reservas"}
           tooltip={{
             mide: "Cuánto tiempo antes del check-in se hacen las reservas, de media. Indica cuánta visibilidad de futuro tenéis.",
-            calculo: "Por cada reserva confirmada con check-in en los próximos 90 días: días entre la fecha de creación y fecha_in. Se promedia el resultado.",
-            origen: "MisterPlan — cada reserva trae su timestamp de creación y su check-in.",
+            calculo: "Para las reservas HECHAS en el periodo: días entre la fecha de reserva en MisterPlan y la fecha de entrada. Se promedia.",
+            origen: "MisterPlan — campo «Fecha Reserva» de cada ficha.",
             sistemas: "MrPlan → robot → BD del panel. Cuanto más alto el número, más planificado el negocio.",
           }}
         />
@@ -401,9 +411,9 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           value={totalMes > 0 ? `${cancelRate.toFixed(1)}%` : "—"}
           hint={totalMes > 0 ? `${canceladasMes} de ${totalMes}` : "Sin reservas"}
           tooltip={{
-            mide: "Porcentaje de reservas del mes en curso que han acabado canceladas o como no-show.",
-            calculo: "(reservas canceladas + no_show del mes) ÷ (total reservas del mes) × 100",
-            origen: "MisterPlan — el estado de la reserva refleja la cancelación.",
+            mide: "Porcentaje de reservas con entrada este mes que se han anulado.",
+            calculo: "(reservas anuladas + no-show con entrada este mes) ÷ (total con entrada este mes) × 100",
+            origen: "MisterPlan. Ojo: solo cuenta las anuladas DESPUÉS de haber entrado en el panel — si una reserva se anula antes de la primera sincronización, el panel nunca la llega a ver.",
             sistemas: "MrPlan → robot → BD del panel. Si sube respecto al histórico, suele ser señal de problema con un canal o política.",
           }}
         />
@@ -413,8 +423,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           hint={paceCount > 0 ? `${formatCurrency(paceRevenue)} en cartera` : "Sin nuevas reservas"}
           tooltip={{
             mide: "Cuántas reservas nuevas han entrado en los últimos 7 días (creadas, no llegadas).",
-            calculo: "COUNT(reservas) WHERE creado_en >= hace 7 días. La cartera es la SUMA del importe_total de esas reservas.",
-            origen: "MisterPlan — fecha de alta de cada reserva.",
+            calculo: "Reservas cuya fecha de reserva en MisterPlan es de los últimos 7 días y con entrada futura. La cartera es la suma de su importe total.",
+            origen: "MisterPlan — campo «Fecha Reserva» de cada ficha.",
             sistemas: "MrPlan → robot → BD del panel. Útil para ver si esta semana está entrando más o menos volumen que la anterior.",
           }}
         />

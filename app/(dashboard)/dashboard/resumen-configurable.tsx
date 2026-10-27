@@ -40,7 +40,7 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
     label: "Personas alojadas ahora", emoji: "👥", group: "Operacional",
     tooltip: {
       mide: "Número total de personas alojadas en este momento.",
-      calculo: "SUM(numero_huespedes) WHERE fecha_in ≤ hoy AND fecha_out > hoy",
+      calculo: "SUM(num_huespedes) WHERE fecha_in ≤ hoy AND fecha_out > hoy (2 por habitación si MisterPlan no da el dato)",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel (suma por reserva activa)"
     }
@@ -210,7 +210,7 @@ export function ResumenConfigurable({ data }: { data: Record<string, any> }) {
         return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
           hint={d.importe ? fmtEur(d.importe) : "Sin pendientes"} accent={d.value > 0 ? "amber" : "default"} />;
       case "habitaciones_libres":
-        return <KPICard label={def.label} value={`${d.value ?? 0} / ${d.total ?? 6}`} emoji={def.emoji} tooltip={def.tooltip} hint="Disponibles hoy" />;
+        return <KPICard label={def.label} value={`${d.value ?? 0} / ${d.total ?? 6}`} emoji={def.emoji} tooltip={def.tooltip} hint={d.hint ?? "Disponibles hoy"} />;
       case "proxima_llegada":
         return <KPICard label={def.label} value={String(d.value ?? "—")} emoji={def.emoji} tooltip={def.tooltip} hint={d.detail || "Sin reservas futuras"} />;
       case "tareas_pendientes":

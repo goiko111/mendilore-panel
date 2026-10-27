@@ -32,7 +32,7 @@ export default async function DashboardPage() {
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
     .gte("fecha_in", todayStr)
     .lt("fecha_in", tomorrow)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
 
   // B) Check-outs hoy
@@ -41,18 +41,19 @@ export default async function DashboardPage() {
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
     .gte("fecha_out", todayStr)
     .lt("fecha_out", tomorrow)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
 
   // C) Personas alojadas ahora (cuenta reservas activas y suma personas — fallback nº reservas si no hay dato)
   const { data: presentesData, count: cntReservasActivas } = await supabase
     .from("reservas")
-    .select("id, numero_huespedes", { count: "exact" })
+    .select("id, num_huespedes", { count: "exact" })
     .lte("fecha_in", todayStr)
     .gt("fecha_out", todayStr)
-    .neq("estado_cobro", "cancelado");
+    .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const cntPresentes = (presentesData ?? []).reduce((sum: number, r: any) => {
-    const n = Number(r?.numero_huespedes);
+    const n = Number(r?.num_huespedes);
     return sum + (isNaN(n) || n <= 0 ? 2 : n);
   }, 0);
   const reservasActivasCount = cntReservasActivas ?? 0;
@@ -64,7 +65,7 @@ export default async function DashboardPage() {
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
     .gte("fecha_in", tomorrow)
     .lt("fecha_in", dayAfterTomorrow)
-    .neq("estado_cobro", "cancelado");
+    .not("estado_reserva", "in", "(cancelada,no_show)");
 
   // E) Cobros pendientes <14d (unificado con tabla)
   const { data: cobros7d, count: cntCobros7d } = await supabase
@@ -107,7 +108,7 @@ export default async function DashboardPage() {
     .select("id, importe_total", { count: "exact" })
     .gte("fecha_in", todayStr)
     .lte("fecha_in", in30Days)
-    .neq("estado_cobro", "cancelado");
+    .not("estado_reserva", "in", "(cancelada,no_show)");
   const pipelineRevenue = (pipeline30d ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
 
   // F) Habitaciones libres hoy
@@ -116,7 +117,7 @@ export default async function DashboardPage() {
     .select("id", { count: "exact", head: true })
     .lte("fecha_in", todayStr)
     .gt("fecha_out", todayStr)
-    .neq("estado_cobro", "cancelado");
+    .not("estado_reserva", "in", "(cancelada,no_show)");
   const libresHoy = 6 - (cntOcupadasHoy ?? 0);
 
   // G) Próxima llegada
@@ -124,7 +125,7 @@ export default async function DashboardPage() {
     .from("reservas")
     .select("habitacion, fecha_in, huespedes(nombre, apellidos)")
     .gt("fecha_in", todayStr)
-    .neq("estado_cobro", "cancelado")
+    .not("estado_reserva", "in", "(cancelada,no_show)")
     .order("fecha_in", { ascending: true })
     .limit(1)
     .single();
@@ -167,7 +168,7 @@ export default async function DashboardPage() {
     .select("id", { count: "exact", head: true })
     .gte("creado_en", hace7d)
     .gt("fecha_in", todayStr)
-    .neq("estado_cobro", "cancelado");
+    .not("estado_reserva", "in", "(cancelada,no_show)");
 
   // N) Cobros pendientes total — solo reservas que requieren ACCIÓN
   //    (excluye canceladas, no_show, reservas pasadas que MrPlan dejó como pendiente por error,
@@ -264,7 +265,7 @@ export default async function DashboardPage() {
       .select("id, habitacion")
       .lte("fecha_in", todayStr)
       .gt("fecha_out", todayStr)
-      .neq("estado_cobro", "cancelado");
+      .not("estado_reserva", "in", "(cancelada,no_show)");
     hkReservaMap = (reservasActivas ?? []).reduce((acc: any, r: any) => {
       acc[r.habitacion] = r.id;
       return acc;

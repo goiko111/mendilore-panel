@@ -26,7 +26,7 @@ import puppeteer from 'puppeteer';
 import type { ActorInput, ReservaScraped, ScrapingError, ScraperResult } from './types.js';
 import { ensureLoggedIn } from './login.js';
 import { scrapePlanning } from './scrape-planning.js';
-import { postToWebhook } from './webhook.js';
+import { postToWebhook, postFinPasada } from './webhook.js';
 
 const DEFAULT_WEBHOOK_URL = 'https://panel.mendilore.com/api/webhook/misterplan';
 
@@ -58,6 +58,7 @@ async function main() {
 
   const errors: ScrapingError[] = [];
   let reservas: ReservaScraped[] = [];
+  let reconciliacion: import('./scrape-planning.js').ScrapeResult['reconciliacion'] | null = null;
   let sessionRefreshed = false;
 
   // MisterPlan rechaza la activación de dispositivos desde IPs de centros de
@@ -147,6 +148,7 @@ async function main() {
         },
       });
       reservas = result.reservas;
+      reconciliacion = result.reconciliacion;
       errors.push(...result.errors);
       log.info(`Scraped ${reservas.length} reservas across ${result.monthsScraped} months · ${result.errors.length} errors`);
     } catch (err) {
@@ -182,6 +184,22 @@ async function main() {
     // Apify marca el actor como FAILED → dispara la alerta de email del schedule
     await Actor.fail(`Webhook failed: HTTP ${wh.status}`);
     return;
+  }
+
+  // Reconciliación: solo tras una pasada COMPLETA (todas las ventanas, sin
+  // corte por tiempo) y con muy pocas fichas sin leer. Si no, mejor no tocar.
+  if (reconciliacion?.completa && reconciliacion.fallidas.length <= 5) {
+    await postFinPasada(webhookUrl, webhookSecret, {
+      desde: reconciliacion.desde,
+      hasta: reconciliacion.hasta,
+      vistas: reservas.map((r) => ({ id: r.id_reserva, hab: r.habitacion })),
+      fallidas: reconciliacion.fallidas,
+    });
+  } else if (reconciliacion) {
+    log.warning(
+      `Sin reconciliación: pasada ${reconciliacion.completa ? 'completa' : 'incompleta'}, ` +
+      `${reconciliacion.fallidas.length} fichas sin leer`,
+    );
   }
 
   log.info(`✓ Run complete · ${reservas.length} reservas · ${errors.length} errors · session refreshed=${sessionRefreshed}`);

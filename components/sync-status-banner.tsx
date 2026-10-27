@@ -38,7 +38,9 @@ export function SyncStatusBanner() {
   };
   const horasMr = horasDesde(data.ultima_sync_mrplan);
   const horasComp = horasDesde(data.ultima_sync_competencia);
-  const mrOK = horasMr !== null && horasMr <= 26;
+  // Con la programación actual (cada 2 h de 8 a 22 y una pasada de madrugada)
+  // nunca deberían pasar más de 5 h sin sincronizar. A partir de 6 h, algo falla.
+  const mrOK = horasMr !== null && horasMr <= 6;
   const compOK = horasComp !== null && horasComp <= 50;
   const todoOK = mrOK && compOK && data.alertas.length === 0;
 
@@ -59,7 +61,7 @@ export function SyncStatusBanner() {
         <div className="font-medium text-amber-900 dark:text-amber-200 mb-1">Estado de la sincronización</div>
         <ul className="text-amber-800 dark:text-amber-300 space-y-0.5">
           {data.ultima_sync_mrplan === null && <li>· MisterPlan no ha sincronizado nunca o el registro se borró. Las reservas pueden no estar al día.</li>}
-          {horasMr !== null && horasMr > 26 && <li>· La última sincronización con MisterPlan fue hace {horasMr}h (lo normal son 24h). Puede haber reservas nuevas sin reflejar.</li>}
+          {horasMr !== null && horasMr > 6 && <li>· La última sincronización con MisterPlan fue hace {horasMr}h. Normalmente se actualiza cada 2 horas: puede haber reservas o cambios sin reflejar.</li>}
           {data.ultima_sync_competencia === null && <li>· No hay capturas de competencia recientes.</li>}
           {horasComp !== null && horasComp > 50 && <li>· La última captura de competencia fue hace {horasComp}h.</li>}
           {data.alertas.map((a, i) => <li key={i}>· {a}</li>)}
