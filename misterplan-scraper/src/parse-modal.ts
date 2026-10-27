@@ -374,9 +374,52 @@ export async function parseModalReserva(
   // === Construcción: una fila por habitación con importes repartidos ===
   const rooms = roomsSeen.length > 0 ? roomsSeen : [{ hab: habitacion, idx: 0 }];
 
+  // Tramo de texto de cada habitación: desde su nombre hasta el de la siguiente.
+  const tramoDe = (i: number) => {
+    const desde = rooms[i].idx;
+    const sig = rooms
+      .map((r) => r.idx)
+      .filter((x) => x > desde)
+      .sort((a, b) => a - b)[0];
+    return textoHabitaciones.slice(desde, sig !== undefined ? Math.min(sig, desde + 600) : desde + 600);
+  };
+
+  // FECHAS POR HABITACIÓN
+  // Cuando el huésped cambia de habitación a mitad de estancia, la ficha
+  // lista cada habitación con SU fecha de inicio y SUS noches:
+  //     Habitación Nube (27/07/2025)  ...  2 noches x 230,00 €  460,00 €
+  //     Habitación Lino (29/07/2025)  ...  1 noche  x 260,00 €  260,00 €
+  // Antes todas las filas heredaban las fechas de la reserva completa, así
+  // que cada habitación salía ocupada toda la estancia y chocaba con otras
+  // reservas (17 habitación-noche dobles y 5 días con más de 6 ocupadas).
+  const isoMas = (isoDia: string, dias: number) => {
+    const d = new Date(isoDia + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + dias);
+    return d.toISOString().slice(0, 10);
+  };
+  const fechasHab = rooms.map((_, i) => {
+    const seg = tramoDe(i);
+    const mIni = seg.match(/\((\d{1,2}\/\d{1,2}\/\d{4})\)/);
+    const mNoc = seg.match(/(\d+)\s*noches?\s*x/i);
+    const ini = mIni ? parseFechaDDMMYYYY(mIni[1]) : '';
+    const n = mNoc ? parseInt(mNoc[1], 10) : 0;
+    // Solo se usan si son coherentes con la estancia completa
+    if (ini && n > 0 && fecha_in && fecha_out && ini >= fecha_in && isoMas(ini, n) <= fecha_out) {
+      return { fecha_in: ini, fecha_out: isoMas(ini, n), noches: n };
+    }
+    return { fecha_in, fecha_out, noches };
+  });
+  const partida = rooms.length > 1 && fechasHab.some((f) => f.fecha_in !== fecha_in || f.fecha_out !== fecha_out);
+  if (partida) {
+    log.info(
+      `Reserva ${id_reserva}: estancia PARTIDA → ` +
+      rooms.map((r, i) => `${r.hab} ${fechasHab[i].fecha_in}+${fechasHab[i].noches}n`).join(', '),
+    );
+  }
+
   // Intentar importe de alojamiento POR habitación: primer importe € tras el nombre
-  const perRoomAloja: number[] = rooms.map(({ hab, idx }) => {
-    const seg = textoHabitaciones.slice(idx, idx + 400);
+  const perRoomAloja: number[] = rooms.map(({ hab, idx }, iRoom) => {
+    const seg = tramoDe(iRoom);
     // La línea de la habitación trae DOS importes:
     //     2P Estándar   7 noches x   240,00 €   1.680,00 €
     // el precio por noche y el total. Cogíamos el primero que apareciera, o
@@ -431,9 +474,9 @@ export async function parseModalReserva(
       localizador_externo,
       canal,
       habitacion: hab,
-      fecha_in,
-      fecha_out,
-      noches,
+      fecha_in: fechasHab[i]?.fecha_in ?? fecha_in,
+      fecha_out: fechasHab[i]?.fecha_out ?? fecha_out,
+      noches: fechasHab[i]?.noches ?? noches,
       huesped_nombre: huesped_nombre || 'Sin nombre',
       huesped_apellidos,
       huesped_email,
