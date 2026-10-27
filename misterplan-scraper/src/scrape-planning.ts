@@ -479,7 +479,26 @@ async function openReservaModal(
       if (debug) log.warning(`Reserva ${ref.idReserva}: la barra "Abrir Reserva" no apareció tras seleccionarla`);
       return null;
     }
-    await btn.click({ delay: 60 });
+    // Clic con ratón y, si Puppeteer lo rechaza ("Node is either not
+    // clickable or not an Element": el botón se repinta justo al seleccionar),
+    // clic sintético. El handler es delegado de jQuery y acepta los dos;
+    // comprobado en el planning real.
+    try {
+      await btn.click({ delay: 60 });
+    } catch {
+      const ok = await frame
+        .evaluate((sel: string) => {
+          const el = document.querySelector(sel) as HTMLElement | null;
+          if (!el) return false;
+          el.click();
+          return true;
+        }, '#abrir_reserva li.abrirReservaEvnt')
+        .catch(() => false);
+      if (!ok) {
+        if (debug) log.warning(`Reserva ${ref.idReserva}: no se pudo pulsar "Abrir Reserva"`);
+        return null;
+      }
+    }
 
     // 3) Esperar la ficha.
     if (!(await modalAbierto(frame, 8000))) {
@@ -654,7 +673,13 @@ export async function scrapePlanning(
       await options.saveScreenshot(`month-${m}-overview.png`, buf as Buffer);
     }
 
-    const todas = await getReservaRefs(frame);
+    let todas = await getReservaRefs(frame);
+    if (todas.length === 0) {
+      // La primera ventana tras el login a veces se lee antes de que el
+      // planning termine de pintar. Una segunda lectura lo resuelve.
+      await new Promise((r) => setTimeout(r, 3000));
+      todas = await getReservaRefs(frame);
+    }
     const refs = todas.filter((r) => !yaVistas.has(r.idReserva));
     for (const r of refs) yaVistas.add(r.idReserva);
     log.info(`Ventana ${m + 1}: ${todas.length} reservas en pantalla, ${refs.length} nuevas`);
