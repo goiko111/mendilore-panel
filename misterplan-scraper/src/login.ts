@@ -304,13 +304,34 @@ async function dumpDebug(page: Page, label: string) {
   }
 }
 
+/**
+ * Navegación tolerante. MisterPlan mantiene conexiones abiertas y, a través
+ * del proxy residencial, `networkidle2` a veces no llega en 30 s: el run
+ * entero moría en la primera carga. Se espera solo al DOM (más el render que
+ * ya se comprueba aparte) y se reintenta con más margen.
+ */
+async function irA(page: Page, url: string): Promise<void> {
+  let ultimo: unknown = null;
+  for (let intento = 1; intento <= 3; intento++) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 + 15_000 * intento });
+      return;
+    } catch (e) {
+      ultimo = e;
+      log.warning(`Carga de ${url} falló (intento ${intento}): ${(e as Error).message.slice(0, 120)}`);
+      await new Promise((r) => setTimeout(r, 2000 * intento));
+    }
+  }
+  throw ultimo;
+}
+
 export async function performLogin(
   page: Page,
   username: string,
   password: string
 ): Promise<LoginResult> {
   log.info(`Navigating to login page: ${URLS.LOGIN}`);
-  await page.goto(URLS.LOGIN, { waitUntil: 'networkidle2', timeout: 30000 });
+  await irA(page, URLS.LOGIN);
   await dumpDebug(page, 'login-01-arrived');
 
   const finalUrl = page.url();
@@ -414,7 +435,7 @@ export async function ensureLoggedIn(
   await applySession(page, session);
 
   // Probar primero la HOME — si ya hay sesión válida, evitamos login
-  await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30000 });
+  await irA(page, URLS.HOME);
   // Esperar a que el dashboard renderice (igual que en performLogin)
   await waitForPostLoginRender(page, 20000);
 
@@ -458,7 +479,7 @@ export async function ensureLoggedIn(
       log.warning(`Login intento ${intento} interrumpido (${msg.slice(0, 120)}) — reintento`);
       await new Promise((r) => setTimeout(r, 3000 * intento));
       try {
-        await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30000 });
+        await irA(page, URLS.HOME);
         await waitForPostLoginRender(page, 20000);
         if (await isLoggedIn(page)) {
           log.info('El envío anterior sí había entrado: sesión iniciada');
