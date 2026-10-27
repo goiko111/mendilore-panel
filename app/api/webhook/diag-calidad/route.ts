@@ -76,7 +76,11 @@ export async function GET(req: Request) {
       }))
     : undefined;
 
+  const rpc: Record<string, number> = {};
+  for (const r of activas) { const k = String(r.canal ?? "null"); (rpc as any)[k] = ((rpc as any)[k] ?? new Set()); ((rpc as any)[k] as Set<string>).add(r.id_externo_misterplan); }
+  for (const k of Object.keys(rpc)) (rpc as any)[k] = ((rpc as any)[k] as Set<string>).size;
   return NextResponse.json({
+    reservas_activas_por_canal: rpc,
     ver: detalleVer,
     total_filas: filas.length,
     reservas_distintas: new Set(filas.map((r) => r.id_externo_misterplan)).size,
