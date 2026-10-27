@@ -63,6 +63,21 @@ export async function GET() {
     ultima_sync_competencia = r?.[0]?.fecha_snapshot ?? null;
   } catch { alertas.push("No se pudo consultar el estado de la captura de competencia."); }
 
+  // Guardia permanente: un día con más reservas que habitaciones es siempre
+  // un error de datos (filas duplicadas o reservas movidas sin reconciliar).
+  try {
+    const { data: imposibles } = await supabase
+      .from("produccion_dia")
+      .select("dia, habitaciones_ocupadas")
+      .gt("habitaciones_ocupadas", 6)
+      .order("dia", { ascending: false })
+      .limit(20);
+    if ((imposibles?.length ?? 0) > 0) {
+      const dias = (imposibles ?? []).slice(0, 5).map((d: any) => `${d.dia} (${d.habitaciones_ocupadas}/6)`).join(", ");
+      alertas.push(`${imposibles!.length} día(s) con más reservas que habitaciones: ${dias}. Revisar antes de fiarse de la ocupación de esas fechas.`);
+    }
+  } catch {}
+
   try {
     const { count } = await supabase
       .from("reservas")
