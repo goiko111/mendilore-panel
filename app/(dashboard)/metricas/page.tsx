@@ -687,7 +687,7 @@ async function VisitasWebGA4() {
           <div className="text-xs font-semibold text-foreground mb-2">Fuentes de tráfico</div>
           <ul className="space-y-1.5">
             {data.topFuentes.length === 0 ? (<li className="text-xs text-muted-foreground italic">Sin datos</li>) :
-              data.topFuentes.map((f: { fuente: string; views: number }) => (
+              data.topFuentes.map((f: { fuente: string; sesiones: number }) => (
                 <li key={f.fuente} className="flex items-center justify-between text-xs">
                   <span className="truncate text-foreground capitalize">{f.fuente || "(direct)"}</span>
                   <span className="shrink-0 ml-3 tabular-nums text-muted-foreground">{f.sesiones}</span>
