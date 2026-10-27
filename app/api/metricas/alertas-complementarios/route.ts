@@ -9,8 +9,11 @@ export async function GET() {
     .select("*")
     .limit(50);
   if (error) return NextResponse.json({ error: error.message, code: error.code, alertas: [] }, { headers: { "cache-control": "no-store" }});
+  // Un consumo con fecha del DÍA DE SALIDA no es un error: es la comida o el
+  // desayuno antes de irse. Solo se muestran las fechas realmente imposibles.
+  const alertas = (data ?? []).filter((a: any) => a.fecha_complementario !== a.fecha_out);
   return NextResponse.json({
-    total: data?.length || 0,
-    alertas: data || []
+    total: alertas.length,
+    alertas,
   }, { headers: { "cache-control": "no-store" }});
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Calendar, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { canalLabel } from "@/lib/constants";
 
 type Metrics = {
   num: number;
@@ -15,7 +16,7 @@ type Metrics = {
 };
 
 type ProdDia = { dia: string; habitaciones_ocupadas: number; ingresos_alojamiento: number; ingresos_complementarios: number; ingresos_total: number };
-type AlertaCompl = { complementario_id: string; localizador_externo: string; habitacion: string; concepto: string; cantidad: number; fecha_complementario: string; fecha_in: string; fecha_out: string; importe: number; tipo_discrepancia: string };
+type AlertaCompl = { complementario_id: string; localizador_externo?: string; id_externo_misterplan?: string; habitacion: string; concepto: string; cantidad: number; fecha_complementario: string; fecha_in: string; fecha_out: string; importe: number; tipo_discrepancia: string };
 type AlertasResp = { total: number; alertas: AlertaCompl[]; error?: string };
 
 type ProdResp = { desde: string; hasta: string; dias: ProdDia[]; totales: { alojamiento: number; complementarios: number; total: number; habitaciones: number }; nota?: string; error?: string; hint?: string };
@@ -166,7 +167,7 @@ export function RangoYoYClient() {
                 <tbody className="text-sm">
                   {Array.from(new Set([...Object.keys(data.actual.porCanal), ...Object.keys(data.anterior.porCanal)])).sort().map(k => (
                     <tr key={k} className="border-b border-neutral-100 dark:border-neutral-800/70 last:border-0">
-                      <td className="py-1.5 capitalize">{k.replace(/_/g, " ")}</td>
+                      <td className="py-1.5">{canalLabel(k)}</td>
                       <td className="text-right tabular-nums">{data.actual.porCanal[k] || 0}</td>
                       <td className="text-right tabular-nums text-neutral-500">{data.anterior.porCanal[k] || 0}</td>
                     </tr>
@@ -233,10 +234,10 @@ export function RangoYoYClient() {
           {alertas && !alertas.error && alertas.total > 0 && (
             <div className="mt-6 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-900 rounded-xl p-4">
               <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-1">
-                ⚠️ Bug de MrPlan detectado — {alertas.total} complementarios con fecha fuera de la estancia
+                ⚠️ {alertas.total} consumos con fecha fuera de la estancia
               </h3>
               <p className="text-xs text-amber-800 dark:text-amber-300 mb-3">
-                MrPlan ha atribuido estos consumos a fechas que no coinciden con la estancia real del huésped. Nuestro cálculo los usa igual porque tiene la fecha exacta, pero es evidencia del bug para la reclamación técnica.
+                MisterPlan tiene estos consumos con una fecha anterior a la llegada o posterior a la salida del huésped. El panel los imputa a la fecha que indica MisterPlan; conviene revisarlos en la ficha por si la fecha está mal puesta. (Los consumos del mismo día de salida no salen aquí: son normales.)
               </p>
               <div className="max-h-64 overflow-y-auto">
                 <table className="w-full text-xs">
@@ -254,7 +255,7 @@ export function RangoYoYClient() {
                   <tbody>
                     {alertas.alertas.map((a) => (
                       <tr key={a.complementario_id} className="border-b border-amber-100 dark:border-amber-900/50 last:border-0">
-                        <td className="py-1 font-mono">{a.localizador_externo}</td>
+                        <td className="py-1 font-mono">{a.id_externo_misterplan ?? a.localizador_externo}</td>
                         <td className="capitalize">{a.habitacion}</td>
                         <td>{a.concepto} <span className="text-neutral-500">×{a.cantidad}</span></td>
                         <td className="text-red-700 dark:text-red-400 tabular-nums">{a.fecha_complementario}</td>
