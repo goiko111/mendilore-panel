@@ -426,21 +426,46 @@ export async function ensureLoggedIn(
   // Login fresh
   // A previous one-time link must never be reused for a fresh login attempt.
   await store.setValue(DEVICE_ACTIVATION_URL_KEY, null);
-  const result = await performLogin(page, username, password);
-  if (!result.success) {
-    if (result.needsManualActivation) {
-      if (await waitForDeviceActivation(page, store, proxyCredentials)) {
-        await saveSession(store, page, true);
-        return { refreshed: true };
-      }
-      throw new Error(
-        'MISTERPLAN_DEVICE_NOT_ACTIVATED: el enlace no se completó durante los 10 minutos ' +
-        'en que el actor mantuvo abierta la sesión. Ejecuta de nuevo y abre el email inmediatamente.'
-      );
-    }
-    throw new Error(`MISTERPLAN_LOGIN_FAILED: ${result.error}`);
-  }
 
-  await saveSession(store, page, true);
-  return { refreshed: true };
+  // Hasta 3 intentos ante errores TRANSITORIOS de Puppeteer. Al pulsar
+  // "Acceso" la página navega, y si en ese instante se está evaluando algo
+  // salta "Execution context was destroyed". Pasó el 27/10/2026 en una
+  // ejecución de prueba: el run entero se perdía por un fallo de un segundo.
+  // Antes de reintentar se comprueba si el primer envío ya había entrado.
+  const transitorio = (m: string) =>
+    /Execution context was destroyed|detached|Target closed|Not attached|navigation|frame was detached/i.test(m);
+  for (let intento = 1; ; intento++) {
+    try {
+      const result = await performLogin(page, username, password);
+      if (!result.success) {
+        if (result.needsManualActivation) {
+          if (await waitForDeviceActivation(page, store, proxyCredentials)) {
+            await saveSession(store, page, true);
+            return { refreshed: true };
+          }
+          throw new Error(
+            'MISTERPLAN_DEVICE_NOT_ACTIVATED: el enlace no se completó durante los 10 minutos ' +
+            'en que el actor mantuvo abierta la sesión. Ejecuta de nuevo y abre el email inmediatamente.'
+          );
+        }
+        throw new Error(`MISTERPLAN_LOGIN_FAILED: ${result.error}`);
+      }
+      await saveSession(store, page, true);
+      return { refreshed: true };
+    } catch (e) {
+      const msg = (e as Error).message || String(e);
+      if (intento >= 3 || !transitorio(msg)) throw e;
+      log.warning(`Login intento ${intento} interrumpido (${msg.slice(0, 120)}) — reintento`);
+      await new Promise((r) => setTimeout(r, 3000 * intento));
+      try {
+        await page.goto(URLS.HOME, { waitUntil: 'networkidle2', timeout: 30000 });
+        await waitForPostLoginRender(page, 20000);
+        if (await isLoggedIn(page)) {
+          log.info('El envío anterior sí había entrado: sesión iniciada');
+          await saveSession(store, page, true);
+          return { refreshed: true };
+        }
+      } catch { /* se reintenta el login completo */ }
+    }
+  }
 }
