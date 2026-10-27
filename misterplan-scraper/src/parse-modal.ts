@@ -398,11 +398,16 @@ export async function parseModalReserva(
     return d.toISOString().slice(0, 10);
   };
   const fechasHab = rooms.map((_, i) => {
+    // Una sola habitación: mandan las fechas de la cabecera de la ficha.
+    // (La línea de la habitación puede venir partida en dos tarifas
+    // — "2 noches x 200 €" + "3 noches x 250 €" — y quedarse con la primera
+    // acortaba la estancia: pasó el 27/10 y faltaron noches en verano.)
+    if (rooms.length === 1) return { fecha_in, fecha_out, noches };
     const seg = tramoDe(i);
     const mIni = seg.match(/\((\d{1,2}\/\d{1,2}\/\d{4})\)/);
-    const mNoc = seg.match(/(\d+)\s*noches?\s*x/i);
+    // Varias tarifas dentro de la misma habitación: se SUMAN sus noches.
+    const n = Array.from(seg.matchAll(/(\d+)\s*noches?\s*x/gi)).reduce((a, m) => a + parseInt(m[1], 10), 0);
     const ini = mIni ? parseFechaDDMMYYYY(mIni[1]) : '';
-    const n = mNoc ? parseInt(mNoc[1], 10) : 0;
     // Solo se usan si son coherentes con la estancia completa
     if (ini && n > 0 && fecha_in && fecha_out && ini >= fecha_in && isoMas(ini, n) <= fecha_out) {
       return { fecha_in: ini, fecha_out: isoMas(ini, n), noches: n };
@@ -427,8 +432,11 @@ export async function parseModalReserva(
     // afectaba a las reservas de varias habitaciones (las de una sola usan el
     // importe global de la ficha), pero bastaba para dejar el alojamiento del
     // panel un 13 % por debajo del informe de MisterPlan.
-    const mTotal = seg.match(/(\d+)\s*noches?\s*x\s*([\d.,]+)\s*€\s*([\d.,]+)\s*€/i);
-    if (mTotal) return parseImporte(mTotal[3]);
+    // Sumar TODAS las líneas de tarifa de la habitación (puede haber varias).
+    const totales = Array.from(seg.matchAll(/(\d+)\s*noches?\s*x\s*([\d.,]+)\s*€\s*([\d.,]+)\s*€/gi));
+    if (totales.length > 0) {
+      return Math.round(totales.reduce((a, m) => a + parseImporte(m[3]), 0) * 100) / 100;
+    }
     const mNoches = seg.match(/(\d+)\s*noches?\s*x\s*([\d.,]+)\s*€/i);
     if (mNoches) {
       const n = parseInt(mNoches[1], 10);
