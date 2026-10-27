@@ -77,13 +77,26 @@ export default async function CompetenciaPage() {
     competidores = c ?? [];
 
     const desde60d = new Date(Date.now() - 60 * 86400_000).toISOString().slice(0, 10);
-    const { data: s, error: es } = await supabase
-      .from("precios_competidores_dia")
-      .select("competidor_id, fecha_snapshot, check_in, check_out, precio_total, precio_por_noche, moneda, disponible, rating, rating_label, reviews_count")
-      .gte("fecha_snapshot", desde60d)
-      .order("check_in", { ascending: true });
-    if (es) throw new Error(`precios_competidores_dia: ${es.message}`);
-    snapshots = s ?? [];
+    // Solo ventanas de entrada de hoy en adelante (las pasadas ya no sirven
+    // para fijar precio) y paginado: Supabase devuelve como mucho 1000 filas
+    // por consulta y 60 días de capturas son bastantes más, así que antes se
+    // cortaban justo las ventanas futuras y salían como "Sin precio".
+    const hoyComp = new Date().toISOString().slice(0, 10);
+    const acumulado: any[] = [];
+    for (let desde = 0; ; desde += 1000) {
+      const { data: s, error: es } = await supabase
+        .from("precios_competidores_dia")
+        .select("competidor_id, fecha_snapshot, check_in, check_out, precio_total, precio_por_noche, moneda, disponible, rating, rating_label, reviews_count")
+        .gte("fecha_snapshot", desde60d)
+        .gte("check_in", hoyComp)
+        .order("check_in", { ascending: true })
+        .order("fecha_snapshot", { ascending: true })
+        .range(desde, desde + 999);
+      if (es) throw new Error(`precios_competidores_dia: ${es.message}`);
+      acumulado.push(...(s ?? []));
+      if (!s || s.length < 1000) break;
+    }
+    snapshots = acumulado;
   } catch (err: any) {
     pageError = String(err?.message ?? err);
   }
