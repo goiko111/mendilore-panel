@@ -98,7 +98,7 @@ export default async function DashboardPage() {
     if (canal === "booking") return false;
     // Web propia con anticipo REAL cobrado → garantizada, resto a la salida
     // (feedback Juan 10.08: si NO hay anticipo, como Álvaro, SÍ es pendiente real)
-    if (canal === "web_propia" && anticipo > 0) return false;
+    if ((canal === "web_propia" || canal === "telefono") && anticipo > 0) return false;
     return true;
   });
 

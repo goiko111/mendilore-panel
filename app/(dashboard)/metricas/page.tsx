@@ -9,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState, StatCard } from "@/components/page-header";
 import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 import { MetricasChart } from "./chart";
-import { HABITACIONES_VALIDAS } from "@/lib/constants";
+import { HABITACIONES_VALIDAS, canalLabel } from "@/lib/constants";
 import { KPITooltip } from "@/components/kpi-tooltip";
 
 export const metadata = { title: "Métricas" };
@@ -531,7 +531,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
               return (
                 <div key={c.canal}>
                   <div className="flex items-center justify-between text-sm mb-1">
-                    <span className="font-medium text-foreground capitalize">{c.canal}</span>
+                    <span className="font-medium text-foreground">{canalLabel(c.canal)}</span>
                     <span className="text-muted-foreground tabular-nums">
                       {formatCurrency(c.revenue)} · {pct.toFixed(0)}% · {c.count} resv.
                     </span>

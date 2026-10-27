@@ -7,14 +7,14 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { AccionesReserva } from "./acciones-reserva";
-import { HABITACIONES_VALIDAS } from "@/lib/constants";
+import { HABITACIONES_VALIDAS , canalLabel, CANALES as CANALES_ALL } from "@/lib/constants";
 
 export const metadata = { title: "Reservas" };
 
 const HABITACIONES = ["cala", "nube", "margarita", "lino", "limonero", "lavanda"];
 const ESTADOS_COBRO = ["cobrado", "pendiente", "fallido", "reembolsado", "no_aplica"];
 const ESTADOS_RESERVA = ["confirmada", "completada", "cancelada", "no_show", "pendiente"];
-const CANALES = ["directo", "booking", "airbnb", "expedia", "web_propia", "walk_in", "otro"];
+const CANALES = CANALES_ALL;
 
 type Tiempo = "todas" | "futuras" | "pasadas";
 
@@ -165,7 +165,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
         </select>
         <select name="canal" defaultValue={sp.canal ?? ""} className="px-3 py-1.5 rounded-md border border-border bg-background text-foreground">
           <option value="">Canal: todos</option>
-          {CANALES.map((c) => <option key={c} value={c}>{c}</option>)}
+          {CANALES.map((c) => <option key={c} value={c}>{canalLabel(c)}</option>)}
         </select>
         <div className="flex gap-2">
           <button type="submit" className="flex-1 bg-foreground text-background hover:bg-foreground/90 px-3 py-1.5 rounded-md font-medium">
@@ -214,7 +214,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                 <th className="text-right font-medium px-5 py-2.5" title="Importe total de la reserva en euros (alojamiento + complementarios). Origen: MisterPlan.">Importe</th>
                 <th className="text-left font-medium px-5 py-2.5" title="Estado de la reserva: confirmada, completada, cancelada, no_show o pendiente. Origen: MisterPlan.">Reserva</th>
                 <th className="text-left font-medium px-5 py-2.5" title="Estado del cobro: cobrado, pendiente, fallido, reembolsado o no_aplica. Origen: MisterPlan.">Cobro</th>
-                <th className="text-left font-medium px-5 py-2.5" title="Canal de venta: directo, booking, airbnb, expedia, web_propia, walk_in u otro.">Canal</th>
+                <th className="text-left font-medium px-5 py-2.5" title="Canal de venta: Booking, Web propia (motor de reservas), Teléfono / manual (metidas a mano en MisterPlan) u otros.">Canal</th>
                 <th className="text-left font-medium px-5 py-2.5" title="Estado de la aceptación de condiciones particulares por el huésped (política de cancelación, mascotas, etc.). Verde si firmada, rojo/naranja según urgencia si pendiente.">Firma legal</th>
                 <th className="text-left font-medium px-5 py-2.5">Acciones</th>
               </tr>
@@ -234,7 +234,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                     <td className="px-5 py-3 text-right font-medium">{formatCurrency(r.importe_total, r.importe_moneda)}</td>
                     <td className="px-5 py-3 text-muted-foreground">{r.estado_reserva}</td>
                     <td className="px-5 py-3 text-muted-foreground">{r.estado_cobro}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{r.canal ?? "—"}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{canalLabel(r.canal)}</td>
                     <td className="px-5 py-3">
                       {(() => {
                         const firmada = aceptadas.has(r.id);

@@ -1,4 +1,5 @@
 export const runtime = 'edge';
+import { canalLabel, CANALES } from "@/lib/constants";
 export const dynamic = 'force-dynamic';
 
 import Link from "next/link";
@@ -9,7 +10,7 @@ import { formatDate, formatCurrency } from "@/lib/utils";
 
 export const metadata = { title: "Huéspedes" };
 
-const FUENTES = ["directo", "booking", "airbnb", "expedia", "web_propia", "walk_in", "otro"];
+const FUENTES = CANALES;
 
 
   // Auto-inferir nacionalidad por email cuando no está en BD
@@ -196,7 +197,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
         </select>
         <select name="fuente" defaultValue={sp.fuente ?? ""} className="px-3 py-1.5 rounded-md border border-border bg-background text-foreground">
           <option value="">Fuente: todas</option>
-          {FUENTES.map((f) => <option key={f} value={f}>{f}</option>)}
+          {FUENTES.map((f) => <option key={f} value={f}>{canalLabel(f)}</option>)}
         </select>
         <div className="md:col-span-4 flex gap-2 justify-between items-center">
           <label className="inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">

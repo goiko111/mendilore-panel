@@ -22,7 +22,7 @@ export async function GET() {
   // 1) Cobros próximos a vencer (3 días) — solo los que requieren ACCIÓN nuestra
   const { data: cobrosUrgRaw } = await supabase
     .from("reservas")
-    .select("id, forma_pago, canal")
+    .select("id, forma_pago, canal, anticipo")
     .eq("estado_cobro", "pendiente")
     .in("estado_reserva", ["confirmada", "pendiente"])
     .gte("fecha_in", todayStr)
@@ -33,8 +33,11 @@ export async function GET() {
     const fp = (r.forma_pago ?? "").toString().toLowerCase();
     const canal = (r.canal ?? "").toString().toLowerCase();
     if (/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard/i.test(fp)) return false;
-    // Regla Juan jul26: booking va por Booking Payments; web propia cobra el resto a la salida
-    if (canal === "booking" || canal === "web_propia") return false;
+    // Booking va por Booking Payments. Web propia y teléfono con anticipo cobrado
+    // pagan el resto a la salida; SIN anticipo sí son pendiente real (feedback
+    // Juan 10.08, caso Álvaro). Misma regla que la tarjeta del Resumen.
+    if (canal === "booking") return false;
+    if ((canal === "web_propia" || canal === "telefono") && Number(r.anticipo ?? 0) > 0) return false;
     return true;
   }).length;
   if ((cobrosUrg ?? 0) > 0) {

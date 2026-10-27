@@ -18,3 +18,24 @@ export function esHabitacionReal(h: string | null | undefined): boolean {
   if (!h) return false;
   return HABITACIONES_VALIDAS.includes(h.toLowerCase() as Habitacion);
 }
+
+/**
+ * Canales de venta tal como los guarda el robot, y su nombre para mostrar.
+ * "telefono" son las reservas que el hotel mete a mano en MisterPlan
+ * (MisterPlan las marca como "Cloud"); "web_propia", las del motor de reservas.
+ */
+export const CANALES = ["booking", "web_propia", "telefono", "directo", "airbnb", "expedia", "walk_in", "otro"] as const;
+const CANAL_LABELS: Record<string, string> = {
+  booking: "Booking",
+  web_propia: "Web propia",
+  telefono: "Teléfono / manual",
+  directo: "Directo",
+  airbnb: "Airbnb",
+  expedia: "Expedia",
+  walk_in: "Sin reserva previa",
+  otro: "Otros",
+};
+export function canalLabel(c: string | null | undefined): string {
+  if (!c) return "—";
+  return CANAL_LABELS[c] ?? c;
+}
