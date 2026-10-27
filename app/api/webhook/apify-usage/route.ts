@@ -1,12 +1,11 @@
 export const runtime = 'edge';
 import { NextResponse } from "next/server";
 
-// Secret en env var (APIFY_USAGE_SECRET). Fallback al hardcoded mientras se hace el rollover.
-const SECRET = process.env.APIFY_USAGE_SECRET || "mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+import { secretoDiagValido } from "@/lib/diag-secret";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  if (url.searchParams.get("secret") !== SECRET) {
+  if (!secretoDiagValido(url.searchParams.get("secret"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const t = process.env.APIFY_TOKEN;

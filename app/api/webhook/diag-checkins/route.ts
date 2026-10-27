@@ -1,10 +1,10 @@
 export const runtime='edge';
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-const SECRET="mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+import { secretoDiagValido } from "@/lib/diag-secret";
 export async function GET(req: Request){
   const u=new URL(req.url);
-  if(u.searchParams.get("secret")!==SECRET) return NextResponse.json({e:"x"},{status:401});
+  if(!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({e:"x"},{status:401});
   const s=createAdminClient();
   const hoy = u.searchParams.get("fecha") || new Date().toISOString().slice(0,10);
   // Todas las reservas con fecha_in = hoy (sin filtros)

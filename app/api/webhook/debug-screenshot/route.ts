@@ -1,8 +1,8 @@
 export const runtime='edge';
-const SECRET="mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+import { secretoDiagValido } from "@/lib/diag-secret";
 export async function GET(req: Request){
   const u=new URL(req.url);
-  if(u.searchParams.get("secret")!==SECRET) return new Response("x", {status:401});
+  if(!secretoDiagValido(u.searchParams.get("secret"))) return new Response("x", {status:401});
   const storeId=u.searchParams.get("storeId");
   const key=u.searchParams.get("key");
   if(!storeId||!key) return new Response("missing", {status:400});

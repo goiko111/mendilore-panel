@@ -1,13 +1,18 @@
 export const runtime = 'edge';
 
 import { NextRequest } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 // Endpoint que genera un HTML imprimible (PDF-ready) con los KPIs del mes solicitado.
 // El navegador renderiza este HTML y el usuario hace Ctrl+P (o Cmd+P) → "Guardar como PDF".
 // Es la forma más fiable y barata en CF Pages Edge (no requiere Puppeteer/Chromium en runtime).
 // URL: /api/export/kpis-pdf?ym=2026-05 (default: mes anterior completo)
 export async function GET(req: NextRequest) {
+  // /api/export queda fuera del login en el middleware y aquí se lee con service_role:
+  // sin esta comprobación cualquiera veía la facturación y los nombres de huéspedes.
+  const { data: { user } } = await (await createClient()).auth.getUser();
+  if (!user) return new Response("No autorizado", { status: 401 });
+
   const url = new URL(req.url);
   const ymParam = url.searchParams.get("ym");
 

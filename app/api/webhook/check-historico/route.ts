@@ -6,13 +6,13 @@
 export const runtime = 'edge';
 import { NextResponse } from "next/server";
 
-const SECRET = "mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+import { secretoDiagValido } from "@/lib/diag-secret";
 const ACTOR_ID = "BTwwwDsTQRz3LPaSA";
 const SUPABASE_URL = "https://itaftpmelcswvphzqgkc.supabase.co";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  if (url.searchParams.get("secret") !== SECRET) {
+  if (!secretoDiagValido(url.searchParams.get("secret"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const runId = url.searchParams.get("runId") || "dQiuAapbdp5LSH0aP";

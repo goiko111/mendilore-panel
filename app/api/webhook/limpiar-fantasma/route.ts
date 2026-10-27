@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 
 // TEMPORAL · borrar al cerrar el proyecto (ver NEXT_STEPS)
-const SECRET = "mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+import { secretoDiagValido } from "@/lib/diag-secret";
 const HABS = ['cala','nube','margarita','lino','limonero','lavanda'];
 
 type Fila = {
@@ -24,7 +24,7 @@ function diasDe(f: Fila): string[] {
 
 export async function POST(req: Request) {
   const u = new URL(req.url);
-  if (req.headers.get("x-admin-secret") !== SECRET && u.searchParams.get("secret") !== SECRET) {
+  if (!secretoDiagValido(req.headers.get("x-admin-secret")) && !secretoDiagValido(u.searchParams.get("secret"))) {
     return NextResponse.json({ e: "x" }, { status: 401 });
   }
   const body = await req.json().catch(() => ({} as any));

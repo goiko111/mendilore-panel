@@ -1,10 +1,10 @@
 export const runtime = 'edge';
 import { NextResponse } from "next/server";
-const SECRET = "mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+import { secretoDiagValido } from "@/lib/diag-secret";
 const ACTOR_ID = "BTwwwDsTQRz3LPaSA";
 
 export async function POST(req: Request) {
-  if (req.headers.get("x-admin-secret") !== SECRET) {
+  if (!secretoDiagValido(req.headers.get("x-admin-secret"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await req.json().catch(() => ({}));

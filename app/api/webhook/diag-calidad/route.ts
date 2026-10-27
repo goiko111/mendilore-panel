@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 
 // TEMPORAL · diagnóstico de calidad de datos. Borrar al cerrar el proyecto.
-const SECRET = "mendilore-temp-2026-06-22-launch-hist-aBc9X3";
+import { secretoDiagValido } from "@/lib/diag-secret";
 const HABS = ["cala", "nube", "margarita", "lino", "limonero", "lavanda"];
 
 export async function GET(req: Request) {
   const u = new URL(req.url);
-  if (u.searchParams.get("secret") !== SECRET) return NextResponse.json({ e: "x" }, { status: 401 });
+  if (!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({ e: "x" }, { status: 401 });
   // Reservas no refrescadas desde esta fecha = no vistas en la última pasada completa
   const corte = u.searchParams.get("corte") || new Date(Date.now() - 36 * 3600e3).toISOString();
 
