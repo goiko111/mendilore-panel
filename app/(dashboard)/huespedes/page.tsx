@@ -1,5 +1,5 @@
 export const runtime = 'edge';
-import { canalLabel, CANALES } from "@/lib/constants";
+import { canalLabel, CANALES, HABITACIONES_VALIDAS } from "@/lib/constants";
 export const dynamic = 'force-dynamic';
 
 import Link from "next/link";
@@ -76,11 +76,19 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   const { data: huespedesRaw, count } = await query;
 
   // 2) Cargar todas las reservas para enriquecer con KPIs por huésped
-  const { data: todasReservas } = await supabase
-    .from("reservas")
-    .select("huesped_id, fecha_in, fecha_out, noches, importe_total, estado_cobro, id_externo_misterplan")
-    .not("estado_reserva", "in", "(cancelada,no_show)")
-    .limit(5000);
+  // Paginado: Supabase devuelve como mucho 1000 filas por consulta aunque se
+  // pida más, y con el histórico ya hay cerca de 800 filas de reservas.
+  const todasReservas: any[] = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data } = await supabase
+      .from("reservas")
+      .select("huesped_id, fecha_in, fecha_out, noches, importe_total, estado_cobro, id_externo_misterplan")
+      .not("estado_reserva", "in", "(cancelada,no_show)")
+      .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
+      .range(desde, desde + 999);
+    todasReservas.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
 
   // Mapa huesped_id → { reservas, noches, gasto, ultimaFechaIn, primeraFechaIn }
   const today = new Date().toISOString().slice(0, 10);
@@ -112,12 +120,15 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   // 3) Aplicar búsqueda libre
   const q = sp.q?.toLowerCase().trim();
   // Orden default: por última estancia desc (huéspedes recientes primero)
+  // Solo personas con al menos una estancia: los registros sin reservas eran
+  // copias que creaba el guardado (corregido en la migración 0036).
+  const conEstancias = (huespedesRaw ?? []).filter((h: any) => statsMap.has(h.id));
   let huespedes = q
-    ? (huespedesRaw ?? []).filter((h: any) => {
+    ? conEstancias.filter((h: any) => {
         const txt = `${h.nombre ?? ""} ${h.apellidos ?? ""} ${h.email ?? ""} ${h.telefono ?? ""}`.toLowerCase();
         return txt.includes(q);
       })
-    : (huespedesRaw ?? []);
+    : conEstancias;
 
 
   // Sort por última estancia DESC (huéspedes más recientes primero)
@@ -133,31 +144,32 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   }
 
   // 5) Países únicos
-  const paisesUnicos = Array.from(new Set((huespedesRaw ?? []).map((h: any) => inferNacionalidad(h)).filter(Boolean))).sort();
+  const paisesUnicos = Array.from(new Set(conEstancias.map((h: any) => inferNacionalidad(h)).filter(Boolean))).sort();
 
   // 6) KPIs globales
-  const totalRepetidores = (huespedesRaw ?? []).filter((h: any) => (statsMap.get(h.id)?.reservas ?? 0) > 1).length;
-  const totalConFuturas = (huespedesRaw ?? []).filter((h: any) => (statsMap.get(h.id)?.futuras ?? 0) > 0).length;
+  const totalUnicos = conEstancias.length;
+  const totalRepetidores = conEstancias.filter((h: any) => (statsMap.get(h.id)?.reservas ?? 0) > 1).length;
+  const totalConFuturas = conEstancias.filter((h: any) => (statsMap.get(h.id)?.futuras ?? 0) > 0).length;
   const totalGasto = Array.from(statsMap.values()).reduce((s, v) => s + v.gasto, 0);
 
   return (
     <div>
       <PageHeader
         title="Huéspedes"
-        description={`${huespedes.length} de ${count ?? 0} contactos registrados`}
+        description={`${huespedes.length} de ${totalUnicos} huéspedes con estancias`}
       />
 
       {/* KPIs globales */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        <StatCard label="Únicos" value={String(count ?? 0)} hint="En base de datos"
+        <StatCard label="Únicos" value={String(totalUnicos)} hint="Con al menos una estancia"
           tooltip={{
             mide: "Personas distintas que han hecho alguna reserva (no se duplican aunque tengan varias estancias).",
-            calculo: "Conteo de registros en la tabla huespedes (filtros aplicados respetan país y fuente). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
-            origen: "Cada reserva nueva crea o reutiliza la ficha huésped por email coincidente.",
+            calculo: "Personas con al menos una estancia no anulada (los filtros de país y fuente se aplican). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
+            origen: "Cada reserva nueva reutiliza la ficha del huésped por email; sin email, por nombre y apellidos.",
             sistemas: "BD propia (tabla huespedes) — alimentada desde MisterPlan vía scraper.",
           }}
         />
-        <StatCard label="Repetidores" value={String(totalRepetidores)} hint={count ? `${((totalRepetidores / (count ?? 1)) * 100).toFixed(0)}% del total` : "—"}
+        <StatCard label="Repetidores" value={String(totalRepetidores)} hint={totalUnicos ? `${((totalRepetidores / totalUnicos) * 100).toFixed(0)}% del total` : "—"}
           tooltip={{
             mide: "Huéspedes que han tenido MÁS DE UNA reserva (no canceladas) — clientes fieles.",
             calculo: "Por cada huésped, contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde jul 2025).",
