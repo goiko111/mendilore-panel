@@ -35,7 +35,11 @@ export default async function CalendarioPage({ searchParams }: { searchParams: P
   const { data: reservas } = await supabase
     .from("reservas")
     .select("id, habitacion, fecha_in, fecha_out, importe_total, importe_moneda, huespedes(nombre, apellidos)")
-    .or(`fecha_in.lte.${endStr},fecha_out.gte.${startStr}`)
+    // Reservas que SOLAPAN el rango: entrada antes del final Y salida después
+    // del inicio. Antes era un OR, que traía todo el histórico; con el límite
+    // de 500 se quedaban fuera justo las reservas futuras.
+    .lte("fecha_in", endStr)
+    .gt("fecha_out", startStr)
     .not("estado_reserva", "in", "(cancelada,no_show)")
     .limit(500);
 

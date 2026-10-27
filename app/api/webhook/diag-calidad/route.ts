@@ -54,7 +54,14 @@ export async function GET(req: Request) {
   const fechaReservaNula = activas.filter((r) => !r.fecha_reserva).length;
 
   // Huéspedes con el mismo nombre normalizado
-  const { data: hs } = await s.from("huespedes").select("id,nombre,apellidos,email").limit(5000);
+  const hs: any[] = [];
+  for (let i = 0; ; i += 1000) {
+    const { data } = await s.from("huespedes").select("id,nombre,apellidos,email").range(i, i + 999);
+    hs.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  const conReserva = new Set(activas.map((r) => r.huesped_id).filter(Boolean));
+  const huerfanos = hs.filter((h) => !conReserva.has(h.id)).length;
   const norm = (x: string) => (x || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
   const porNombre = new Map<string, any[]>();
   for (const h of hs ?? []) { const k = norm(`${h.nombre ?? ""} ${h.apellidos ?? ""}`).split(" ").slice(0, 2).join(" "); if (!k) continue; const a = porNombre.get(k) ?? []; a.push({ id: h.id, email: h.email }); porNombre.set(k, a); }
@@ -72,6 +79,6 @@ export async function GET(req: Request) {
     corte_refresco: corte,
     no_refrescadas: noRefrescadas.length, no_refrescadas_detalle: noRefrescadas.slice(0, 80),
     fecha_reserva_igual_a_entrada: fechaReservaFalsa, fecha_reserva_nula: fechaReservaNula,
-    huespedes: (hs ?? []).length, huespedes_duplicados: huespedesDuplicados.length, huespedes_duplicados_detalle: huespedesDuplicados.slice(0, 30),
+    huespedes: hs.length, huespedes_con_reserva_activa: conReserva.size, huespedes_sin_reserva: huerfanos, huespedes_duplicados: huespedesDuplicados.length, huespedes_duplicados_detalle: huespedesDuplicados.slice(0, 30),
   }, { headers: { "cache-control": "no-store" } });
 }
