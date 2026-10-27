@@ -285,8 +285,14 @@ export async function parseModalReserva(
         let importe: number | null = null;
 
         for (const celda of celdas.slice(1)) {
-          const mh = celda.match(/^Habitaci[oó]n\s+(.+)$/i);
-          if (mh) { habLinea = normalizarHabitacion(mh[1].trim()); continue; }
+          // En las líneas de descuento la habitación y la fecha comparten celda:
+          //   "Habitación Limonero 10/08/2026"
+          const mh = celda.match(/^Habitaci[oó]n\s+(.+?)(?:\s+(\d{1,2}\/\d{1,2}\/\d{4}))?$/i);
+          if (mh) {
+            habLinea = normalizarHabitacion(mh[1].trim());
+            if (mh[2] && !fechaRaw) fechaRaw = mh[2];
+            continue;
+          }
           const mi = celda.match(RE_IMPORTE);
           if (mi && importe === null) importe = parseImporte(mi[1]);
         }
