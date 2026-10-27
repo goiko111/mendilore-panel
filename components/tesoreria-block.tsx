@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Wallet, Clock, CreditCard, CheckCircle2 } from "lucide-react";
+import { canalLabel } from "@/lib/constants";
 
 type ResumenRow = {
   clasificacion: string;
@@ -147,7 +148,7 @@ export function TesoreriaBlock() {
                       <td className="px-3 py-1.5">{d.huesped}</td>
                       <td className="capitalize">{d.habitacion}</td>
                       <td className="tabular-nums">{d.fecha_in}</td>
-                      <td className="capitalize">{(d.canal || "").replace(/_/g, " ")}</td>
+                      <td>{canalLabel(d.canal)}</td>
                       <td className="text-right tabular-nums">{money(d.importe_total)}</td>
                       <td className="text-right tabular-nums text-muted-foreground">{money(d.ya_cobrado)}</td>
                       <td className="text-right tabular-nums font-medium">{money(d.por_cobrar)}</td>

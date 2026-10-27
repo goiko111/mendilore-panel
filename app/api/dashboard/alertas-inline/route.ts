@@ -94,24 +94,33 @@ export async function GET() {
   // 4) Cambios drásticos en competencia (≥15% últimas 24h)
   try {
     const ayer = new Date(today.getTime() - 86400_000).toISOString().slice(0, 10);
+    // Se compara la MISMA fecha de entrada en dos capturas de días distintos.
+    // Antes se comparaban las dos últimas capturas de cada hotel aunque fueran
+    // de fechas de entrada diferentes (un martes de noviembre contra un sábado
+    // de diciembre), y el aviso saltaba casi todos los días sin motivo.
     const { data: snaps } = await supabase
       .from("precios_competidores_dia")
-      .select("competidor_id, fecha_snapshot, precio_por_noche, disponible")
+      .select("competidor_id, check_in, fecha_snapshot, precio_por_noche, disponible")
       .gte("fecha_snapshot", ayer)
+      .gte("check_in", todayStr)
       .order("fecha_snapshot", { ascending: false });
-    const porComp = new Map<string, any[]>();
+    const porVentana = new Map<string, any[]>();
     (snaps ?? []).forEach((s: any) => {
-      if (!s.disponible || !s.precio_por_noche) return;
-      const arr = porComp.get(s.competidor_id) ?? [];
+      if (!s.disponible || !s.precio_por_noche || !s.check_in) return;
+      const k = `${s.competidor_id}|${s.check_in}`;
+      const arr = porVentana.get(k) ?? [];
       arr.push(s);
-      porComp.set(s.competidor_id, arr);
+      porVentana.set(k, arr);
     });
-    let cambios = 0;
-    porComp.forEach((arr) => {
-      if (arr.length < 2) return;
-      const delta = Math.abs((Number(arr[0].precio_por_noche) - Number(arr[1].precio_por_noche)) / Number(arr[1].precio_por_noche)) * 100;
-      if (delta >= 15) cambios++;
+    const conCambio = new Set<string>();
+    porVentana.forEach((arr) => {
+      const actual = arr[0];
+      const previo = arr.find((x: any) => x.fecha_snapshot !== actual.fecha_snapshot);
+      if (!previo) return;
+      const delta = Math.abs((Number(actual.precio_por_noche) - Number(previo.precio_por_noche)) / Number(previo.precio_por_noche)) * 100;
+      if (delta >= 15) conCambio.add(actual.competidor_id);
     });
+    const cambios = conCambio.size;
     if (cambios > 0) {
       alertas.push({
         tipo: "competencia",
