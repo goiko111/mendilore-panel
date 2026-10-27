@@ -67,7 +67,17 @@ export async function GET(req: Request) {
   for (const h of hs ?? []) { const k = norm(`${h.nombre ?? ""} ${h.apellidos ?? ""}`).split(" ").slice(0, 2).join(" "); if (!k) continue; const a = porNombre.get(k) ?? []; a.push({ id: h.id, email: h.email }); porNombre.set(k, a); }
   const huespedesDuplicados = Array.from(porNombre.entries()).filter(([, a]) => a.length > 1).map(([nombre, a]) => ({ nombre, n: a.length, emails: a.map((x) => x.email) }));
 
+  const ver = (u.searchParams.get("ver") || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const detalleVer = ver.length
+    ? filas.filter((r) => ver.includes(r.id_externo_misterplan)).map((r) => ({
+        id: r.id_externo_misterplan, hab: r.habitacion, in: r.fecha_in, out: r.fecha_out, noches: r.noches,
+        canal: r.canal, estado: r.estado_reserva, aloj: r.importe_alojamiento, compl: r.importe_complementarios,
+        total: r.importe_total, act: r.actualizado_en,
+      }))
+    : undefined;
+
   return NextResponse.json({
+    ver: detalleVer,
     total_filas: filas.length,
     reservas_distintas: new Set(filas.map((r) => r.id_externo_misterplan)).size,
     por_estado_reserva: contar("estado_reserva"),
