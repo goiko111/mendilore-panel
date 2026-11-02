@@ -140,12 +140,27 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
 
   // 4) Personas: la ficha del huésped se reutiliza por email, pero Booking da un
   // email de reenvío distinto en cada reserva y hay quien repite con otro email
-  // o sin él. Para Únicos y Repetidores se junta por nombre y apellidos
-  // (feedback Juan 10.08: "solo 12 repetidores es incorrecto"; el 02/11 había
-  // 20 personas repartidas en varias fichas).
+  // o sin él. Para Únicos y Repetidores se junta por nombre y primer apellido
+  // cuando el resto no se contradice: Booking suele dar un solo apellido
+  // («Ana Ruiz» y «Ana Ruiz Gil» son la misma; «Ana Ruiz Gil» y «Ana Ruiz
+  // Sanz», no). Feedback Juan 10.08: "solo 12 repetidores es incorrecto"; el
+  // 02/11 había 20 personas repartidas en varias fichas.
+  const nombreDe = (h: any) => `${h.nombre ?? ""} ${h.apellidos ?? ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const nombresPorClave = new Map<string, Set<string>>();
+  for (const h of conEstancias) {
+    const n = nombreDe(h);
+    const k = n.split(" ").slice(0, 2).join(" ");
+    if (n.split(" ").length < 2) continue;
+    nombresPorClave.set(k, (nombresPorClave.get(k) ?? new Set<string>()).add(n));
+  }
   const personaDe = (h: any) => {
-    const n = `${h.nombre ?? ""} ${h.apellidos ?? ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-    return n.split(" ").length >= 2 ? n : `id:${h.id}`;
+    const n = nombreDe(h);
+    if (n.split(" ").length < 2) return `id:${h.id}`;
+    const k = n.split(" ").slice(0, 2).join(" ");
+    const nombres = Array.from(nombresPorClave.get(k) ?? []);
+    const largo = nombres.reduce((a, b) => (b.length > a.length ? b : a), "");
+    const compatibles = nombres.every((x) => x === largo || largo.startsWith(x + " "));
+    return compatibles ? k : n;
   };
   const estanciasPersona = new Map<string, Set<string>>();
   const futurasPersona = new Map<string, number>();
@@ -176,7 +191,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
     <div>
       <PageHeader
         title="Huéspedes"
-        description={`${huespedes.length} de ${totalUnicos} huéspedes con estancias`}
+        description={`${totalUnicos} personas con estancias · ${huespedes.length} ${huespedes.length === 1 ? "ficha" : "fichas"} en la lista`}
       />
 
       {/* KPIs globales */}
@@ -185,14 +200,14 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
           tooltip={{
             mide: "Personas distintas que han hecho alguna reserva (no se duplican aunque tengan varias estancias).",
             calculo: "Personas con al menos una estancia no anulada (los filtros de país y fuente se aplican). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
-            origen: "Una persona = mismo nombre y apellidos, aunque tenga varias fichas (Booking da un email distinto en cada reserva).",
+            origen: "Una persona = mismo nombre y primer apellido si el resto no se contradice («Ana Ruiz» y «Ana Ruiz Gil»), aunque tenga varias fichas: Booking da un email distinto en cada reserva.",
             sistemas: "BD propia (tabla huespedes) — alimentada desde MisterPlan vía scraper.",
           }}
         />
         <StatCard label="Repetidores" value={String(totalRepetidores)} hint={totalUnicos ? `${((totalRepetidores / totalUnicos) * 100).toFixed(0)}% del total` : "—"}
           tooltip={{
             mide: "Huéspedes que han tenido MÁS DE UNA reserva (no canceladas) — clientes fieles.",
-            calculo: "Por cada persona (mismo nombre y apellidos, aunque tenga varias fichas o emails), contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde jul 2025).",
+            calculo: "Por cada persona (mismo nombre y primer apellido si el resto no se contradice, aunque tenga varias fichas o emails), contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde jul 2025).",
             origen: "Cálculo en tiempo real sobre la tabla reservas filtrando estado != cancelado.",
             sistemas: "BD propia (reservas + huespedes). Por debajo, MisterPlan es la fuente original.",
           }}
