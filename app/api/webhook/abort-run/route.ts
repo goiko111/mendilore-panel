@@ -2,7 +2,7 @@ export const runtime='edge';
 import { NextResponse } from "next/server";
 import { secretoDiagValido } from "@/lib/diag-secret";
 export async function POST(req: Request){
-  if(!secretoDiagValido(req.headers.get("x-admin-secret"))) return NextResponse.json({e:"x"},{status:401});
+  if(!await secretoDiagValido(req.headers.get("x-admin-secret"))) return NextResponse.json({e:"x"},{status:401});
   const body=await req.json().catch(()=>({}));
   const runId=body?.runId;
   if(!runId) return NextResponse.json({e:"no runId"},{status:400});

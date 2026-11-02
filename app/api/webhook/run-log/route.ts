@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { secretoDiagValido } from "@/lib/diag-secret";
 export async function GET(req: Request) {
   const u = new URL(req.url);
-  if (!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({error:"x"},{status:401});
+  if (!await secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({error:"x"},{status:401});
   const runId = u.searchParams.get("runId") || "dQiuAapbdp5LSH0aP";
   const t = process.env.APIFY_TOKEN;
   if (!t) return NextResponse.json({error:"no token"});

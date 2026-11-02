@@ -4,7 +4,7 @@ import { secretoDiagValido } from "@/lib/diag-secret";
 const ACTOR_ID="BTwwwDsTQRz3LPaSA";
 export async function GET(req: Request){
   const u=new URL(req.url);
-  if(!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({e:"x"},{status:401});
+  if(!await secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({e:"x"},{status:401});
   const t=process.env.APIFY_TOKEN;
   if(!t) return NextResponse.json({e:"no token"});
   const r=await fetch(`https://api.apify.com/v2/acts/${ACTOR_ID}/builds?token=${t}&limit=5&desc=true`);

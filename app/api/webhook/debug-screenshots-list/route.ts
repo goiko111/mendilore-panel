@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { secretoDiagValido } from "@/lib/diag-secret";
 export async function GET(req: Request){
   const u=new URL(req.url);
-  if(!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({e:"x"},{status:401});
+  if(!await secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({e:"x"},{status:401});
   const t=process.env.APIFY_TOKEN;
   // Buscar key-value store con nombre debug-screenshots
   // Los KVS por defecto van asociados a runs. Necesitamos listar KVS del usuario

@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { secretoDiagValido } from "@/lib/diag-secret";
 export async function GET(req: Request){
   const u=new URL(req.url);
-  if(!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({e:"x"},{status:401});
+  if(!await secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({e:"x"},{status:401});
   const s=createAdminClient();
   const {data} = await s.from("reservas").select("*").limit(1);
   return NextResponse.json({

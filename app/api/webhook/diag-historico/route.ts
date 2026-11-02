@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { secretoDiagValido } from "@/lib/diag-secret";
 export async function GET(req: Request) {
   const u = new URL(req.url);
-  if (!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({error:"x"},{status:401});
+  if (!await secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({error:"x"},{status:401});
   const s = createAdminClient();
   // Reservas por mes (extract anio-mes de fecha_in)
   const { data: reservas, error: e1 } = await s

@@ -7,7 +7,7 @@ import { secretoDiagValido } from "@/lib/diag-secret";
 
 export async function GET(req: Request) {
   const u = new URL(req.url);
-  if (!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({ e: "x" }, { status: 401 });
+  if (!await secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({ e: "x" }, { status: 401 });
   const q = (u.searchParams.get("q") || "").trim();
   if (!q) return NextResponse.json({ error: "falta ?q=nombre" }, { status: 400 });
 

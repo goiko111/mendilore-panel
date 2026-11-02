@@ -5,7 +5,7 @@ import { secretoDiagValido } from "@/lib/diag-secret";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  if (!secretoDiagValido(url.searchParams.get("secret"))) {
+  if (!await secretoDiagValido(url.searchParams.get("secret"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const t = process.env.APIFY_TOKEN;

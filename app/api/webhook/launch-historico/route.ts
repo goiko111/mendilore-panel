@@ -4,7 +4,7 @@ import { secretoDiagValido } from "@/lib/diag-secret";
 const ACTOR_ID = "BTwwwDsTQRz3LPaSA";
 
 export async function POST(req: Request) {
-  if (!secretoDiagValido(req.headers.get("x-admin-secret"))) {
+  if (!await secretoDiagValido(req.headers.get("x-admin-secret"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await req.json().catch(() => ({}));

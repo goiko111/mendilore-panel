@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { secretoDiagValido } from "@/lib/diag-secret";
 const ACTOR_ID="BTwwwDsTQRz3LPaSA";
 export async function POST(req: Request){
-  if(!secretoDiagValido(req.headers.get("x-admin-secret"))) return NextResponse.json({e:"x"},{status:401});
+  if(!await secretoDiagValido(req.headers.get("x-admin-secret"))) return NextResponse.json({e:"x"},{status:401});
   const t=process.env.APIFY_TOKEN;
   // Force new build. tag=latest para que el próximo run lo use por defecto
   const url=`https://api.apify.com/v2/acts/${ACTOR_ID}/builds?token=${t}&tag=latest&useCache=false&waitForFinish=0&version=0.0`;

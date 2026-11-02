@@ -12,7 +12,7 @@ const SUPABASE_URL = "https://itaftpmelcswvphzqgkc.supabase.co";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  if (!secretoDiagValido(url.searchParams.get("secret"))) {
+  if (!await secretoDiagValido(url.searchParams.get("secret"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const runId = url.searchParams.get("runId") || "dQiuAapbdp5LSH0aP";

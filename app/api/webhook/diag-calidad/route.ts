@@ -8,7 +8,7 @@ const HABS = ["cala", "nube", "margarita", "lino", "limonero", "lavanda"];
 
 export async function GET(req: Request) {
   const u = new URL(req.url);
-  if (!secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({ e: "x" }, { status: 401 });
+  if (!await secretoDiagValido(u.searchParams.get("secret"))) return NextResponse.json({ e: "x" }, { status: 401 });
   // Reservas no refrescadas desde esta fecha = no vistas en la última pasada completa
   const corte = u.searchParams.get("corte") || new Date(Date.now() - 36 * 3600e3).toISOString();
 

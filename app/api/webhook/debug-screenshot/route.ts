@@ -2,7 +2,7 @@ export const runtime='edge';
 import { secretoDiagValido } from "@/lib/diag-secret";
 export async function GET(req: Request){
   const u=new URL(req.url);
-  if(!secretoDiagValido(u.searchParams.get("secret"))) return new Response("x", {status:401});
+  if(!await secretoDiagValido(u.searchParams.get("secret"))) return new Response("x", {status:401});
   const storeId=u.searchParams.get("storeId");
   const key=u.searchParams.get("key");
   if(!storeId||!key) return new Response("missing", {status:400});

@@ -24,7 +24,7 @@ function diasDe(f: Fila): string[] {
 
 export async function POST(req: Request) {
   const u = new URL(req.url);
-  if (!secretoDiagValido(req.headers.get("x-admin-secret")) && !secretoDiagValido(u.searchParams.get("secret"))) {
+  if (!await secretoDiagValido(req.headers.get("x-admin-secret")) && !await secretoDiagValido(u.searchParams.get("secret"))) {
     return NextResponse.json({ e: "x" }, { status: 401 });
   }
   const body = await req.json().catch(() => ({} as any));
