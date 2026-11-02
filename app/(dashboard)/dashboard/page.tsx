@@ -210,6 +210,9 @@ export default async function DashboardPage() {
     .neq("estado_reserva", "cancelada")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const cobradoMes = (reservasMes ?? []).filter((r: any) => r.estado_cobro === "cobrado").reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
+  // Lo que suman esas mismas reservas: la base con la que se compara lo cobrado
+  // (feedback Juan 10.08: contra «Ingresos del mes», que va por noches, no cuadraba nunca).
+  const facturadoEntradasMes = (reservasMes ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
   const totalReservasMes = (reservasMes ?? []).length;
   // Para la tasa de cobro: las pagadas por Booking Payments cuentan como cobradas
   //  (ya están pagadas a Booking, MrPlan a veces marca pendiente igualmente)
@@ -241,7 +244,7 @@ export default async function DashboardPage() {
     cobros_pendientes_total: { value: cobrosTotalImporte },
     // Operación
     reservas_nuevas_hoy: { value: cntReservasHoy ?? 0 },
-    cobrado_mes: { value: cobradoMes },
+    cobrado_mes: { value: cobradoMes, base: facturadoEntradasMes },
     tasa_cobro: { value: tasaCobro, cobradas: cobradasMes, total: totalReservasMes }
   };
 

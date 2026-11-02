@@ -138,18 +138,38 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
     return ub.localeCompare(ua);
   });
 
-  // 4) Repetidores
+  // 4) Personas: la ficha del huésped se reutiliza por email, pero Booking da un
+  // email de reenvío distinto en cada reserva y hay quien repite con otro email
+  // o sin él. Para Únicos y Repetidores se junta por nombre y apellidos
+  // (feedback Juan 10.08: "solo 12 repetidores es incorrecto"; el 02/11 había
+  // 20 personas repartidas en varias fichas).
+  const personaDe = (h: any) => {
+    const n = `${h.nombre ?? ""} ${h.apellidos ?? ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+    return n.split(" ").length >= 2 ? n : `id:${h.id}`;
+  };
+  const estanciasPersona = new Map<string, Set<string>>();
+  const futurasPersona = new Map<string, number>();
+  for (const h of conEstancias) {
+    const p = personaDe(h);
+    const set = estanciasPersona.get(p) ?? new Set<string>();
+    for (const e of Array.from(estanciasVistas.get(h.id) ?? [])) set.add(e);
+    estanciasPersona.set(p, set);
+    futurasPersona.set(p, (futurasPersona.get(p) ?? 0) + (statsMap.get(h.id)?.futuras ?? 0));
+  }
+  const esRepetidor = (h: any) => (estanciasPersona.get(personaDe(h))?.size ?? 0) > 1;
+
+  // 5) Repetidores
   if (onlyRepeat) {
-    huespedes = huespedes.filter((h: any) => (statsMap.get(h.id)?.reservas ?? 0) > 1);
+    huespedes = huespedes.filter(esRepetidor);
   }
 
-  // 5) Países únicos
+  // 6) Países únicos
   const paisesUnicos = Array.from(new Set(conEstancias.map((h: any) => inferNacionalidad(h)).filter(Boolean))).sort();
 
-  // 6) KPIs globales
-  const totalUnicos = conEstancias.length;
-  const totalRepetidores = conEstancias.filter((h: any) => (statsMap.get(h.id)?.reservas ?? 0) > 1).length;
-  const totalConFuturas = conEstancias.filter((h: any) => (statsMap.get(h.id)?.futuras ?? 0) > 0).length;
+  // 7) KPIs globales (por persona)
+  const totalUnicos = estanciasPersona.size;
+  const totalRepetidores = Array.from(estanciasPersona.values()).filter((s) => s.size > 1).length;
+  const totalConFuturas = Array.from(futurasPersona.values()).filter((n) => n > 0).length;
   const totalGasto = Array.from(statsMap.values()).reduce((s, v) => s + v.gasto, 0);
 
   return (
@@ -165,14 +185,14 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
           tooltip={{
             mide: "Personas distintas que han hecho alguna reserva (no se duplican aunque tengan varias estancias).",
             calculo: "Personas con al menos una estancia no anulada (los filtros de país y fuente se aplican). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
-            origen: "Cada reserva nueva reutiliza la ficha del huésped por email; sin email, por nombre y apellidos.",
+            origen: "Una persona = mismo nombre y apellidos, aunque tenga varias fichas (Booking da un email distinto en cada reserva).",
             sistemas: "BD propia (tabla huespedes) — alimentada desde MisterPlan vía scraper.",
           }}
         />
         <StatCard label="Repetidores" value={String(totalRepetidores)} hint={totalUnicos ? `${((totalRepetidores / totalUnicos) * 100).toFixed(0)}% del total` : "—"}
           tooltip={{
             mide: "Huéspedes que han tenido MÁS DE UNA reserva (no canceladas) — clientes fieles.",
-            calculo: "Por cada huésped, contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde jul 2025).",
+            calculo: "Por cada persona (mismo nombre y apellidos, aunque tenga varias fichas o emails), contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde jul 2025).",
             origen: "Cálculo en tiempo real sobre la tabla reservas filtrando estado != cancelado.",
             sistemas: "BD propia (reservas + huespedes). Por debajo, MisterPlan es la fuente original.",
           }}

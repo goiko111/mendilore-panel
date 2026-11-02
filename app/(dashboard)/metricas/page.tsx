@@ -61,10 +61,17 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const supabase = await createClient();
   const today = new Date();
   const ATAJOS = calcularAtajos(today);
+  // Hoy en Mendilore: el servidor va en UTC y de 0 a 2 h daba el día anterior.
+  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(today);
+  const diaISO = (base: string, delta: number) => new Date(new Date(base).getTime() + delta * 86400_000).toISOString().slice(0, 10);
+  const diasEntre = (a: string, b: string) => Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400_000) + 1;
 
   // Tres modos: (a) ?desde=YYYY-MM-DD&hasta=... — rango libre
   //             (b) ?atajo=verano|mes|anio|... — un atajo precomputado
   //             (c) ?p=7d|30d|90d|365d — lookback clásico (default)
+  // "Últimos N días" son las N noches que acaban ayer. Antes iba de hace N días
+  // a hoy, ambos incluidos: N+1 noches (feedback Juan sep: 39/48 = 81,2 %
+  // frente a 37/42 = 88,1 %).
   let desde: string, hasta: string, lookbackDays: number;
   let selected: Period | null = null;
   let atajoActivo: string | null = null;
@@ -72,27 +79,26 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   if (sp.desde && sp.hasta && /^\d{4}-\d{2}-\d{2}$/.test(sp.desde) && /^\d{4}-\d{2}-\d{2}$/.test(sp.hasta)) {
     desde = sp.desde;
     hasta = sp.hasta;
-    lookbackDays = Math.max(1, Math.round((new Date(hasta).getTime() - new Date(desde).getTime()) / 86400_000));
+    lookbackDays = Math.max(1, diasEntre(desde, hasta));
   } else if (sp.atajo) {
     const a = ATAJOS.find(x => x.key === sp.atajo);
     if (a) {
       desde = a.desde;
       hasta = a.hasta;
       atajoActivo = a.key;
-      lookbackDays = Math.max(1, Math.round((new Date(hasta).getTime() - new Date(desde).getTime()) / 86400_000));
+      lookbackDays = Math.max(1, diasEntre(desde, hasta));
     } else {
       selected = "30d";
       lookbackDays = 30;
-      desde = new Date(today.getTime() - lookbackDays * 86400_000).toISOString().slice(0, 10);
-      hasta = today.toISOString().slice(0, 10);
+      desde = diaISO(todayStr, -lookbackDays);
+      hasta = diaISO(todayStr, -1);
     }
   } else {
     selected = (PERIODS.find(p => p.key === sp.p)?.key ?? "30d") as Period;
     lookbackDays = PERIODS.find(p => p.key === selected)!.days;
-    desde = new Date(today.getTime() - lookbackDays * 86400_000).toISOString().slice(0, 10);
-    hasta = today.toISOString().slice(0, 10);
+    desde = diaISO(todayStr, -lookbackDays);
+    hasta = diaISO(todayStr, -1);
   }
-  const todayStr = today.toISOString().slice(0, 10);
   // Rango extendido para el gráfico: 60d atrás → 90d adelante (cubre histórico + pipeline)
   const desdeChart = new Date(today.getTime() - 60 * 86400_000).toISOString().slice(0, 10);
   const hastaChart = new Date(today.getTime() + 90 * 86400_000).toISOString().slice(0, 10);
@@ -106,9 +112,12 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     .lte("fecha", todayStr)
     .order("fecha", { ascending: true });
 
-  // KPIs mismo período año anterior (comparativa)
-  const desdeYA = new Date(today.getTime() - (365 + lookbackDays) * 86400_000).toISOString().slice(0, 10);
-  const hastaYA = new Date(today.getTime() - 365 * 86400_000).toISOString().slice(0, 10);
+  // KPIs mismo período año anterior (comparativa): las mismas fechas un año
+  // antes, como la Comparativa YoY. Antes se contaba hacia atrás desde hoy, así
+  // que con un atajo o un rango libre se comparaba con otras fechas.
+  const unAñoAntes = (s: string) => { const d = new Date(s); d.setUTCFullYear(d.getUTCFullYear() - 1); return d.toISOString().slice(0, 10); };
+  const desdeYA = unAñoAntes(desde);
+  const hastaYA = unAñoAntes(hasta < todayStr ? hasta : todayStr);
   const { data: metricasYA } = await supabase
     .from("metricas_dia")
     .select("*")

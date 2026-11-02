@@ -31,7 +31,9 @@ type Response = {
   yoy: Record<string, number>;
 };
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+// Fecha local: con toISOString el día 1 a las 00:00 en España salía como el
+// último día del mes anterior (UTC), y "Este mes" iba del 31 al 29.
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 function firstOfMonth(d = new Date()) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -46,15 +48,17 @@ function daysAgo(n: number) {
   const d = new Date(); d.setDate(d.getDate() - n); return d;
 }
 
+// "Últimos N días" = las N noches que acaban ayer, igual que en Métricas.
+// "Este mes" llega hasta hoy, como Métricas: sin noches futuras.
 const presets: [string, () => [Date, Date]][] = [
-  ["Últimos 7 días", () => [daysAgo(7), new Date()]],
-  ["Últimos 30 días", () => [daysAgo(30), new Date()]],
-  ["Este mes", () => [firstOfMonth(), lastOfMonth()]],
+  ["Últimos 7 días", () => [daysAgo(7), daysAgo(1)]],
+  ["Últimos 30 días", () => [daysAgo(30), daysAgo(1)]],
+  ["Este mes", () => [firstOfMonth(), new Date()]],
   ["Mes pasado", () => {
-    const d = new Date(); d.setMonth(d.getMonth() - 1);
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
     return [firstOfMonth(d), lastOfMonth(d)];
   }],
-  ["Últimos 90 días", () => [daysAgo(90), new Date()]],
+  ["Últimos 90 días", () => [daysAgo(90), daysAgo(1)]],
   ["Este año", () => [firstOfYear(), new Date()]],
 ];
 
@@ -74,7 +78,7 @@ function money(n: number) {
 
 export function RangoYoYClient() {
   const [desde, setDesde] = useState(iso(firstOfMonth()));
-  const [hasta, setHasta] = useState(iso(lastOfMonth()));
+  const [hasta, setHasta] = useState(iso(new Date()));
   const [data, setData] = useState<Response | null>(null);
   const [prod, setProd] = useState<ProdResp | null>(null);
   const [alertas, setAlertas] = useState<AlertasResp | null>(null);

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Wallet, Clock, CreditCard, CheckCircle2 } from "lucide-react";
 import { canalLabel } from "@/lib/constants";
+import { KPITooltip, type KPITooltipProps } from "@/components/kpi-tooltip";
 
 type ResumenRow = {
   clasificacion: string;
@@ -22,28 +23,37 @@ type Resp = { resumen: ResumenRow[]; detalle: DetalleRow[]; error?: string; hint
 const money = (n: number) =>
   new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(Number(n) || 0);
 
-const META: Record<string, { label: string; Icon: any; cls: string; chip: string }> = {
+// Textos de ayuda de cada tarjeta (feedback Juan 10.08: no tenían la «i»).
+// Periodo de las tarjetas: reservas con salida en los últimos 90 días y todas las futuras.
+const ORIGEN = "Ficha de cada reserva en MisterPlan: Anticipo y Pendiente de cobro.";
+const SISTEMAS = "MisterPlan → robot → BD del panel (vista clasificacion_cobros).";
+
+const META: Record<string, { label: string; Icon: any; cls: string; chip: string; tooltip: KPITooltipProps }> = {
   pendiente_gestion: {
     label: "Pendiente de gestión",
     Icon: Clock,
+    tooltip: { mide: "Reservas con importe por cobrar que necesitan acción vuestra: no son de Booking y no tienen ningún anticipo cobrado.", calculo: "Pendiente de cobro > 0, canal distinto de Booking y anticipo = 0. Salida en los últimos 90 días o futura.", origen: ORIGEN, sistemas: SISTEMAS },
     cls: "border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/20",
     chip: "bg-amber-200 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100",
   },
   anticipo_web: {
-    label: "Anticipo web (50%)",
+    label: "Anticipo cobrado",
     Icon: Wallet,
+    tooltip: { mide: "Reservas con un anticipo ya cobrado y el resto pendiente, que se paga a la salida. Se usa el anticipo real de la ficha, no un 50 % fijo.", calculo: "Anticipo > 0 y pendiente de cobro > 0, canal distinto de Booking. Salida en los últimos 90 días o futura.", origen: ORIGEN, sistemas: SISTEMAS },
     cls: "border-sky-300 dark:border-sky-900 bg-sky-50 dark:bg-sky-950/20",
     chip: "bg-sky-200 text-sky-900 dark:bg-sky-900/50 dark:text-sky-100",
   },
   prepago_ota: {
     label: "Prepago OTA",
     Icon: CreditCard,
+    tooltip: { mide: "Reservas de Booking con importe pendiente: lo cobra Booking (Booking Payments) y os lo abona después de la salida.", calculo: "Canal Booking y pendiente de cobro > 0. Salida en los últimos 90 días o futura.", origen: ORIGEN, sistemas: SISTEMAS },
     cls: "border-violet-300 dark:border-violet-900 bg-violet-50 dark:bg-violet-950/20",
     chip: "bg-violet-200 text-violet-900 dark:bg-violet-900/50 dark:text-violet-100",
   },
   cobrado: {
     label: "Cobrado",
     Icon: CheckCircle2,
+    tooltip: { mide: "Reservas cobradas por completo.", calculo: "Estado de cobro «cobrado» en MisterPlan o pendiente de cobro = 0. Salida en los últimos 90 días o futura.", origen: ORIGEN, sistemas: SISTEMAS },
     cls: "border-emerald-300 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/20",
     chip: "bg-emerald-200 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-100",
   },
@@ -82,10 +92,10 @@ export function TesoreriaBlock() {
         <h2 className="text-base font-semibold text-foreground">💶 Tesorería — estado real de los cobros</h2>
       </div>
       <p className="text-xs text-muted-foreground mb-3">
-        Solo <strong>Pendiente de gestión</strong> requiere acción vuestra. Prepago OTA y Anticipo web están
+        Solo <strong>Pendiente de gestión</strong> requiere acción vuestra. Prepago OTA y Anticipo cobrado están
         garantizados: se cobran solos, pero los mostramos para el seguimiento de tesorería.
         {" "}<span className="font-medium">Periodo: reservas con salida en los últimos 90 días + todas las futuras.</span>
-        {" "}El "Anticipo web" solo se asigna cuando hay un anticipo real cobrado en MisterPlan.
+        {" "}El "Anticipo cobrado" solo se asigna cuando hay un anticipo real cobrado en MisterPlan.
       </p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -93,14 +103,18 @@ export function TesoreriaBlock() {
           const meta = META[r.clasificacion] ?? META.cobrado;
           const activo = filtro === r.clasificacion;
           return (
-            <button
+            <div
               key={r.clasificacion}
+              role="button"
+              tabIndex={0}
               onClick={() => setFiltro(activo ? null : r.clasificacion)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFiltro(activo ? null : r.clasificacion); } }}
               className={`text-left rounded-xl border p-3 transition ${meta.cls} ${activo ? "ring-2 ring-offset-1 ring-neutral-400 dark:ring-neutral-600" : "hover:opacity-90"}`}
             >
               <div className="flex items-center gap-1.5 mb-1">
                 <meta.Icon className="size-3.5" />
                 <span className="text-[11px] font-semibold uppercase tracking-wide">{meta.label}</span>
+                <KPITooltip {...meta.tooltip} />
               </div>
               <div className="text-xl font-semibold tabular-nums">{money(r.importe_total)}</div>
               <div className="text-[11px] mt-0.5 opacity-80">
@@ -109,7 +123,7 @@ export function TesoreriaBlock() {
                   <> · queda <strong className="tabular-nums">{money(r.por_cobrar)}</strong></>
                 )}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

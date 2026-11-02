@@ -111,8 +111,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   cobrado_mes: {
     label: "Cobrado este mes", emoji: "✅", group: "Cobros",
     tooltip: {
-      mide: "Importe ya cobrado de las reservas con check-in en el mes en curso.",
-      calculo: "SUM(importe_total) WHERE estado_cobro = 'cobrado' AND fecha_in en mes actual",
+      mide: "De las reservas que han entrado este mes (del día 1 a hoy), el importe que MisterPlan marca como cobrado. Debajo, lo que suman esas mismas reservas. No se compara con «Ingresos del mes», que reparte cada estancia por noches.",
+      calculo: "SUM(importe_total) WHERE estado_cobro = 'cobrado' AND fecha_in entre el día 1 y hoy (sin canceladas)",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -120,8 +120,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   tasa_cobro: {
     label: "Tasa de cobro %", emoji: "📊", group: "Cobros",
     tooltip: {
-      mide: "Porcentaje de los ingresos del mes en curso que ya están cobrados.",
-      calculo: "(cobrado este mes ÷ ingresos del mes) × 100",
+      mide: "De las reservas que han entrado este mes (del día 1 a hoy), cuántas están cobradas. Las de Booking Payments cuentan como cobradas: ya están pagadas a Booking.",
+      calculo: "(reservas cobradas ÷ reservas con fecha_in entre el día 1 y hoy, sin canceladas) × 100",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel → cálculo derivado"
     }
@@ -129,8 +129,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   ingresos_mes: {
     label: "Ingresos del mes", emoji: "📈", group: "Financiero",
     tooltip: {
-      mide: "Importe total facturado por reservas con check-in en el mes en curso.",
-      calculo: "SUM(importe_total) WHERE fecha_in en mes actual",
+      mide: "Producción del mes hasta hoy: alojamiento y consumos de las noches del día 1 a hoy, con cada estancia repartida entre sus noches. Es la misma cifra que Métricas con «Mes actual».",
+      calculo: "SUM(ingresos del día) de produccion_dia entre el día 1 y hoy",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -234,7 +234,7 @@ export function ResumenConfigurable({ data }: { data: Record<string, any> }) {
       case "reservas_nuevas_hoy":
         return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Pickup del día" />;
       case "cobrado_mes":
-        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Confirmado cobrado" accent="green" />;
+        return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint={`de ${fmtEur(d.base ?? 0)} de esas reservas`} accent="green" />;
       case "tasa_cobro":
         return <KPICard label={def.label} value={d.value !== null && d.value !== undefined ? `${d.value.toFixed(0)}%` : "—"} emoji={def.emoji} tooltip={def.tooltip} hint={`${d.cobradas ?? 0} / ${d.total ?? 0} reservas`} accent={d.value >= 80 ? "green" : d.value >= 50 ? "amber" : "default"} />;
     }
