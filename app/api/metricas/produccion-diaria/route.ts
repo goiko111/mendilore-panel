@@ -29,6 +29,6 @@ export async function GET(req: Request) {
     desde, hasta,
     dias: data || [],
     totales: total,
-    nota: "Alojamiento y complementarios repartidos linealmente entre las noches de estancia de cada reserva — corrige el bug del informe agregado de MrPlan"
+    nota: "Alojamiento repartido entre las noches de cada estancia; complementarios con fecha en su día y sin fecha repartidos entre las noches. Desde la ficha de cada reserva, no desde el informe de Facturación de MisterPlan."
   }, { headers: { "cache-control": "no-store" }});
 }

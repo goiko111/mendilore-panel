@@ -186,13 +186,13 @@ export function RangoYoYClient() {
           {prod && !prod.error && prod.dias.length > 0 && (
             <div className="mt-8 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4">
               <div className="flex items-baseline justify-between mb-3">
-                <h3 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">Producción por día · corregida vs bug MrPlan</h3>
+                <h3 className="text-sm font-medium text-neutral-500 uppercase tracking-wide">Producción por día</h3>
                 <div className="text-xs text-neutral-500">
                   Total: <span className="font-medium text-neutral-800 dark:text-neutral-200">{money(prod.totales.total)}</span> · {prod.totales.habitaciones} noches vendidas
                 </div>
               </div>
               <p className="text-[11px] text-neutral-500 mb-3">
-                Alojamiento y complementarios (consumos, cenas, extras) repartidos linealmente entre las noches de estancia real de cada reserva. Ignora el informe agregado de MrPlan que atribuye extras a días equivocados.
+                Alojamiento repartido entre las noches de cada estancia. Complementarios (consumos, cenas, extras): los que llevan fecha en MisterPlan, en ese día; los demás, repartidos entre las noches de la estancia. Se calcula desde la ficha de cada reserva, no desde el informe de Facturación de MisterPlan (que apunta la reserva entera al mes de la última noche).
               </p>
               <div className="max-h-96 overflow-y-auto">
                 <table className="w-full text-sm">
