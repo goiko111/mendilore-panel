@@ -54,9 +54,10 @@ export async function GET() {
   const in1 = new Date(today.getTime() + 86400_000).toISOString().slice(0, 10);
   const { data: reservasProx } = await supabase
     .from("reservas")
-    .select("id")
+    .select("id, id_externo_misterplan")
     .gte("fecha_in", todayStr)
-    .lte("fecha_in", in1);
+    .lte("fecha_in", in1)
+    .not("estado_reserva", "in", "(cancelada,no_show)");
   const idsProx = (reservasProx ?? []).map((r: any) => r.id);
   if (idsProx.length > 0) {
     const { data: firmadas } = await supabase
@@ -64,7 +65,10 @@ export async function GET() {
       .select("reserva_id")
       .in("reserva_id", idsProx);
     const firmadasSet = new Set((firmadas ?? []).map((f: any) => f.reserva_id));
-    const sinFirma = idsProx.filter((id) => !firmadasSet.has(id));
+    // Por reserva, no por habitación: una de 6 habitaciones es una firma.
+    const clave = (r: any) => r.id_externo_misterplan || r.id;
+    const firmadasRes = new Set((reservasProx ?? []).filter((r: any) => firmadasSet.has(r.id)).map(clave));
+    const sinFirma = Array.from(new Set((reservasProx ?? []).map(clave))).filter((k) => !firmadasRes.has(k));
     if (sinFirma.length > 0) {
       alertas.push({
         tipo: "legal",

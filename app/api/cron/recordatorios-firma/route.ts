@@ -10,10 +10,12 @@
  * Auth: header `x-cron-secret` debe coincidir con CRON_SECRET (env var).
  *
  * Fase 3 mejora 3/7 — Bloque 17 feedback Juan.
+ * Un recordatorio por reserva, no por habitación (feedback Juan nov).
  */
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { agruparPorReserva, textoHabitaciones } from "@/lib/reserva-grupo";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -25,7 +27,7 @@ function getFrom() {
   return process.env.RESEND_DOMAIN_VERIFICADO === "true" ? FROM_PRODUCCION : FROM_FALLBACK;
 }
 
-function htmlBody(huesped_nombre: string, dias: number, enlace: string, habitacion: string, fecha_in: string): string {
+function htmlBody(huesped_nombre: string, dias: number, enlace: string, habitaciones: string, fecha_in: string): string {
   const fechaFmt = new Date(fecha_in).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
   const tono = dias === 1 ? "mañana" : dias === 3 ? "en unos días" : "próximamente";
   return `<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fafaf9;margin:0;padding:24px;">
@@ -34,7 +36,7 @@ function htmlBody(huesped_nombre: string, dias: number, enlace: string, habitaci
     <div style="color:#737373;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Casa Mendilore · Hondarribia</div>
     <h1 style="margin:0 0 16px;font-size:20px;color:#171717;">Hola ${huesped_nombre || "huésped"},</h1>
     <p style="margin:0 0 12px;color:#374151;font-size:15px;line-height:1.55;">
-      Te escribimos porque tu estancia en Casa Mendilore empieza <strong>${tono}</strong> — el <strong>${fechaFmt}</strong> en la habitación ${habitacion.charAt(0).toUpperCase()+habitacion.slice(1)}.
+      Te escribimos porque tu estancia en Casa Mendilore empieza <strong>${tono}</strong> — el <strong>${fechaFmt}</strong> en ${habitaciones}.
     </p>
     <p style="margin:0 0 12px;color:#374151;font-size:15px;line-height:1.55;">
       Antes de tu llegada necesitamos que aceptes las <strong>condiciones particulares</strong> de la reserva (política de cancelación, normas de la casa y mascotas si aplica).
@@ -73,13 +75,23 @@ export async function GET(req: Request) {
   // Reservas pendientes de firma (vista creada en migration 0015)
   const { data: pendientes, error } = await supabase
     .from("reservas_pendientes_firma")
-    .select("id, habitacion, fecha_in, huesped_nombre, huesped_email, dias_hasta_checkin")
+    .select("id, habitacion, fecha_in, huesped, huesped_email, dias_hasta_checkin")
     .in("dias_hasta_checkin", [7, 3, 1])
     .not("huesped_email", "is", null);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const reservas = (pendientes ?? []).filter((p: any) => p.huesped_email && p.huesped_email.includes("@"));
+  // La vista pide la columna `huesped` (nombre y apellidos); antes se pedía
+  // `huesped_nombre`, que no existe, y la consulta fallaba entera. La vista
+  // tampoco filtra anuladas: se miran aquí, con el id externo para agrupar.
+  const conEmail = (pendientes ?? []).filter((p: any) => p.huesped_email && p.huesped_email.includes("@"));
+  const { data: extra } = conEmail.length
+    ? await supabase.from("reservas").select("id, id_externo_misterplan, estado_reserva").in("id", conEmail.map((p: any) => p.id))
+    : { data: [] as any[] };
+  const infoDe = new Map<string, any>((extra ?? []).map((x: any) => [x.id, x]));
+  const reservas = conEmail
+    .filter((p: any) => !["cancelada", "no_show"].includes(infoDe.get(p.id)?.estado_reserva))
+    .map((p: any) => ({ ...p, id_externo_misterplan: infoDe.get(p.id)?.id_externo_misterplan ?? null }));
   if (reservas.length === 0) {
     return NextResponse.json({ ok: true, fecha: today, recordatorios_enviados: 0, motivo: "Sin pendientes a -7/-3/-1d" });
   }
@@ -100,16 +112,17 @@ export async function GET(req: Request) {
   let saltados = 0;
   const errores: any[] = [];
 
-  for (const r of reservas) {
+  for (const grupo of agruparPorReserva(reservas)) {
+    const r: any = grupo[0];
     const dias = Number(r.dias_hasta_checkin);
-    const key = `${r.id}|${dias}`;
-    if (yaEnviadosSet.has(key)) { saltados++; continue; }
+    if (grupo.some((g: any) => yaEnviadosSet.has(`${g.id}|${dias}`))) { saltados++; continue; }
 
     const enlace = `https://panel.mendilore.com/aceptar/${r.id}`;
     const subject = dias === 1
       ? `Tu estancia es mañana — Confirma las condiciones de tu reserva`
       : `Tu estancia se acerca — Confirma las condiciones (${dias} días)`;
-    const html = htmlBody(r.huesped_nombre ?? "", dias, enlace, r.habitacion, r.fecha_in);
+    const nombre = String(r.huesped ?? "").trim().split(" ")[0] ?? "";
+    const html = htmlBody(nombre === "—" ? "" : nombre, dias, enlace, textoHabitaciones(grupo.map((g: any) => g.habitacion)), r.fecha_in);
 
     const resp = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -127,12 +140,12 @@ export async function GET(req: Request) {
 
     if (resp.ok) {
       enviados++;
-      // Marcar como enviado
-      await supabase.from("aceptaciones_recordatorios").insert({
-        reserva_id: r.id,
+      // Marcar como enviado (en todas las habitaciones de la reserva)
+      await supabase.from("aceptaciones_recordatorios").insert(grupo.map((g: any) => ({
+        reserva_id: g.id,
         dias_offset: dias,
         email_destino: r.huesped_email,
-      });
+      })));
     } else {
       const d = await resp.text();
       errores.push({ reserva_id: r.id, status: resp.status, body: d.slice(0, 240) });

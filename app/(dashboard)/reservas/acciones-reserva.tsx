@@ -9,11 +9,14 @@ export function AccionesReserva({
   estado_cobro,
   huesped_email,
   firmada,
+  mostrarLegal = true,
 }: {
   id: string;
   estado_cobro: string;
   huesped_email?: string | null;
   firmada?: boolean;
+  /** false en las demás habitaciones de una reserva: la firma es una por reserva. */
+  mostrarLegal?: boolean;
 }) {
   const router = useRouter();
   const [loadingCobrar, setLoadingCobrar] = useState(false);
@@ -95,14 +98,14 @@ export function AccionesReserva({
           <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 ring-1 ring-white dark:ring-slate-900" aria-hidden></span>
         )}
       </button>
-      <button
+      {mostrarLegal && <button
         onClick={enviarLegal}
         disabled={loadingLegal || !huesped_email}
         className={`inline-flex items-center justify-center size-7 rounded transition border border-border text-muted-foreground hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30 disabled:opacity-40 ${enviado ? "bg-blue-100 text-blue-700" : ""}`}
         title={huesped_email ? `Enviar enlace legal a ${huesped_email}` : "Sin email"}
       >
         {loadingLegal ? <Loader2 className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
-      </button>
+      </button>}
       {error && <span className="text-[10px] text-red-700 dark:text-red-400">{error}</span>}
       {enviado && <span className="text-[10px] text-emerald-700 dark:text-emerald-400">✓</span>}
     </div>

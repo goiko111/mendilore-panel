@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { notFound } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/server";
 import AceptarForm from "./AceptarForm";
+import { filasDeLaReserva } from "@/lib/reserva-grupo";
 
 export const metadata = { title: "Aceptar condiciones — Casa Mendilore", robots: { index: false } };
 
@@ -30,11 +31,16 @@ export default async function AceptarPage({ params }: Params) {
     .in("tipo", ["condiciones_particulares", "politica_cancelacion", "politica_mascotas"])
     .order("tipo");
 
-  // ¿Ya aceptó esta reserva los documentos vigentes?
+  // Todas las habitaciones de la reserva: se firma una vez por reserva.
+  const filas = await filasDeLaReserva(supabase, reserva_id);
+  const habitaciones = filas.map((f) => f.habitacion);
+  const importeReserva = filas.reduce((s, f) => s + Number(f.importe_total ?? 0), 0);
+
+  // ¿Ya aceptó esta reserva los documentos vigentes? (en cualquiera de sus habitaciones)
   const { data: aceptaciones } = await supabase
     .from("aceptaciones_condiciones")
     .select("documento_legal_id, aceptado_en")
-    .eq("reserva_id", reserva_id);
+    .in("reserva_id", filas.length ? filas.map((f) => f.id) : [reserva_id]);
 
   const aceptados = new Set((aceptaciones ?? []).map((a: any) => a.documento_legal_id));
   const todosAceptados = (documentos ?? []).every((d) => aceptados.has(d.id));
@@ -57,13 +63,13 @@ export default async function AceptarPage({ params }: Params) {
         <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-5 mb-6 text-sm">
           <div className="font-medium text-stone-900 dark:text-stone-100 mb-1">Tu reserva</div>
           <dl className="grid grid-cols-2 gap-y-1 gap-x-4 text-stone-600 dark:text-stone-400">
-            <dt>Habitación</dt><dd className="text-stone-900 dark:text-stone-100 capitalize">{reserva.habitacion}</dd>
+            <dt>{habitaciones.length > 1 ? "Habitaciones" : "Habitación"}</dt><dd className="text-stone-900 dark:text-stone-100 capitalize">{(habitaciones.length ? habitaciones : [reserva.habitacion]).join(", ")}</dd>
             <dt>Entrada</dt><dd className="text-stone-900 dark:text-stone-100">{new Date(reserva.fecha_in).toLocaleDateString("es-ES")}</dd>
             <dt>Salida</dt><dd className="text-stone-900 dark:text-stone-100">{new Date(reserva.fecha_out).toLocaleDateString("es-ES")}</dd>
-            {reserva.importe_total && (
+            {(importeReserva || reserva.importe_total) && (
               <>
                 <dt>Importe total</dt>
-                <dd className="text-stone-900 dark:text-stone-100">{reserva.importe_total} {reserva.importe_moneda ?? "EUR"}</dd>
+                <dd className="text-stone-900 dark:text-stone-100">{Math.round((importeReserva || Number(reserva.importe_total)) * 100) / 100} {reserva.importe_moneda ?? "EUR"}</dd>
               </>
             )}
           </dl>

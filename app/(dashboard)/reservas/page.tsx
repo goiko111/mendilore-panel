@@ -41,7 +41,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
 
   let query = supabase
     .from("reservas")
-    .select("id, habitacion, fecha_in, fecha_out, noches, importe_total, importe_moneda, estado_reserva, estado_cobro, canal, huespedes(nombre, apellidos, email)")
+    .select("id, habitacion, fecha_in, fecha_out, noches, importe_total, importe_moneda, estado_reserva, estado_cobro, canal, id_externo_misterplan, huespedes(nombre, apellidos, email)")
     .order("fecha_in", { ascending })
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
     .limit(1000);
@@ -67,6 +67,17 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
         .in("reserva_id", reservaIds)
     : { data: [] };
   const aceptadas = new Set<string>((aceptacionesData ?? []).map((a: any) => a.reserva_id));
+  // La firma va por reserva, no por habitación (feedback Juan nov: una
+  // reserva de 6 habitaciones salía como 6 procesos). Solo la primera fila de
+  // cada reserva muestra el estado y el botón; si cualquier habitación está
+  // firmada, la reserva entera lo está.
+  const claveReserva = (r: any) => r.id_externo_misterplan || r.id;
+  const primeraFila = new Map<string, string>();
+  const reservaFirmada = new Set<string>();
+  for (const r of reservasRaw ?? []) {
+    if (!primeraFila.has(claveReserva(r))) primeraFila.set(claveReserva(r), r.id);
+    if (aceptadas.has(r.id)) reservaFirmada.add(claveReserva(r));
+  }
 
   // Filtro client-side por texto libre (q) sobre nombre/email del huésped
   const q = sp.q?.toLowerCase().trim();
@@ -237,7 +248,10 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                     <td className="px-5 py-3 text-muted-foreground">{canalLabel(r.canal)}</td>
                     <td className="px-5 py-3">
                       {(() => {
-                        const firmada = aceptadas.has(r.id);
+                        if (primeraFila.get(claveReserva(r)) !== r.id) {
+                          return <span className="text-muted-foreground text-xs" title="La firma legal es una por reserva: se gestiona en la primera habitación de la lista.">misma reserva ↑</span>;
+                        }
+                        const firmada = reservaFirmada.has(claveReserva(r));
                         if (firmada) {
                           return <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 text-xs font-medium">✓ Firmada</span>;
                         }
@@ -259,7 +273,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
                         return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium border ${color}`}>{label}</span>;
                       })()}
                     </td>
-                    <td className="px-5 py-3"><AccionesReserva id={r.id} estado_cobro={r.estado_cobro} huesped_email={(r.huespedes as any)?.email} firmada={aceptadas.has(r.id)} /></td>
+                    <td className="px-5 py-3"><AccionesReserva id={r.id} estado_cobro={r.estado_cobro} huesped_email={(r.huespedes as any)?.email} firmada={reservaFirmada.has(claveReserva(r))} mostrarLegal={primeraFila.get(claveReserva(r)) === r.id} /></td>
                   </tr>
                 );
               })}

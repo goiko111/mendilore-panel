@@ -36,6 +36,7 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { filasDeLaReserva } from "@/lib/reserva-grupo";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -102,10 +103,17 @@ export async function POST(request: Request) {
   const referer = body.url_pagina ?? request.headers.get("referer") ?? null;
   const metodo = body.metodo ?? "checkbox_web";
 
-  // Insertar una fila por documento aceptado
-  const rows = docs.map((d) => ({
+  // La aceptación vale para toda la reserva: si tiene varias habitaciones, se
+  // registra en cada una (así el resto del panel la ve firmada sin cambios).
+  const reservaIds: (string | null)[] = body.reserva_id
+    ? (await filasDeLaReserva(supabase, body.reserva_id)).map((f) => f.id)
+    : [];
+  if (reservaIds.length === 0) reservaIds.push(body.reserva_id ?? null);
+
+  // Insertar una fila por documento aceptado (y por habitación de la reserva)
+  const rows = reservaIds.flatMap((reservaId) => docs.map((d) => ({
     huesped_id: body.huesped_id ?? null,
-    reserva_id: body.reserva_id ?? null,
+    reserva_id: reservaId,
     huesped_nombre_capturado: nombre,
     huesped_email_capturado: body.huesped_email ?? null,
     huesped_documento_capturado: body.huesped_documento ?? null,
@@ -117,7 +125,7 @@ export async function POST(request: Request) {
     user_agent: userAgent,
     url_pagina: referer,
     metodo
-  }));
+  })));
 
   const { data: inserted, error: errIns } = await supabase
     .from("aceptaciones_condiciones")
