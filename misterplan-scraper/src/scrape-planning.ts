@@ -188,6 +188,15 @@ async function navigateMonth(frame: Frame, direction: number): Promise<boolean> 
  * Además antes se devolvía true por el mero hecho de escribir en el input,
  * sin comprobar que el planning hubiera cambiado de mes.
  */
+/**
+ * Rejilla de la última ventana bien situada. Si tras pedir otra fecha la
+ * rejilla sale idéntica, el planning no se ha movido: el 08/11 pidió el
+ * 03/07/2026, siguió mostrando 18/06–09/07, se dio por buena porque estaba
+ * "cerca" y nunca se leyó del 10 al 16 de julio; la reconciliación marcó
+ * como anuladas 4 reservas reales de esos días.
+ */
+let rangoAnterior: { desde: string; hasta: string } | null = null;
+
 async function goToFecha(frame: Frame, iso: string): Promise<boolean> {
   const [yyyy, mm, dd] = iso.split('-');
   const objetivo = `${dd}/${mm}/${yyyy}`;
@@ -236,14 +245,18 @@ async function goToFecha(frame: Frame, iso: string): Promise<boolean> {
       !rango ||
       (Math.abs(Date.parse(rango.desde) - Date.parse(iso)) < 20 * 864e5 &&
         Date.parse(rango.hasta) >= Date.parse(iso) - 20 * 864e5);
-    if (verif === objetivo && cerca) {
+    const repetida =
+      !!rango && !!rangoAnterior && rango.desde === rangoAnterior.desde && rango.hasta === rangoAnterior.hasta;
+    if (verif === objetivo && cerca && !repetida) {
+      rangoAnterior = rango;
       log.info(
         `Planning en ${objetivo}${rango ? ` · ventana ${rango.desde}..${rango.hasta}` : ' · sin reservas'} (intento ${intento})`,
       );
       return true;
     }
     log.warning(
-      `goToFecha ${objetivo}: input=${verif ?? '?'} rejilla=${rango ? rango.desde + '..' + rango.hasta : 'vacía'} (intento ${intento})`,
+      `goToFecha ${objetivo}: input=${verif ?? '?'} rejilla=${rango ? rango.desde + '..' + rango.hasta : 'vacía'}` +
+        `${repetida ? ' — igual que la ventana anterior, el planning no se ha movido' : ''} (intento ${intento})`,
     );
   }
   return false;
@@ -651,6 +664,7 @@ export async function scrapePlanning(
   const intentos = new Map<string, number>();
   const fallidas = new Map<string, { fecha_inicio: string; fecha_fin: string }>();
   let ventanasSaltadas = 0;
+  rangoAnterior = null;
 
   // PRESUPUESTO DE TIEMPO — el sync horario tenía timeout de 300s y TODAS las
   // ejecuciones morían como TIMED-OUT. Ahora paramos limpiamente antes del
