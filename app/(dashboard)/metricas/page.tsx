@@ -169,7 +169,6 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const hace7d = new Date(today.getTime() - 7 * 86400_000).toISOString();
   const inicioMes = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
   const finMes = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
-  const hace30d = new Date(today.getTime() - 30 * 86400_000).toISOString().slice(0, 10);
   const en30d = new Date(today.getTime() + 30 * 86400_000).toISOString().slice(0, 10);
   const en60d = new Date(today.getTime() + 60 * 86400_000).toISOString().slice(0, 10);
   const en90d = new Date(today.getTime() + 90 * 86400_000).toISOString().slice(0, 10);
@@ -240,26 +239,45 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const paceCount = (paceRows ?? []).length;
   const paceRevenue = (paceRows ?? []).reduce((sum, r) => sum + Number(r.importe_total ?? 0), 0);
 
-  // Channel mix: ingresos por canal últimos 30d
-  const { data: canalRows } = await supabase
-    .from("reservas")
-    .select("canal, importe_total")
-    .gte("fecha_in", hace30d)
-    .lte("fecha_in", todayStr)
-    .not("estado_reserva", "in", "(cancelada,no_show)")
-    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
-  const canalMap = new Map<string, { count: number; revenue: number }>();
-  (canalRows ?? []).forEach((r) => {
+  // Channel mix del periodo elegido. Antes: últimos 30 días fijos, importe
+  // ENTERO de las reservas con entrada en esos días y una "reserva" por
+  // habitación (feedback Juan nov: Teléfono 10.206 € con 11 frente a Booking
+  // 7.767 € con 22). Ahora, como Métricas: solo las noches que caen en el
+  // periodo, alojamiento de esas noches (importe ÷ noches) y reservas distintas.
+  const hastaCanal = hasta < todayStr ? hasta : todayStr;
+  const canalRows: any[] = [];
+  for (let i = 0; ; i += 1000) {
+    const { data } = await supabase
+      .from("reservas")
+      .select("canal, fecha_in, fecha_out, noches, importe_alojamiento, id, id_externo_misterplan")
+      .lte("fecha_in", hastaCanal)
+      .gt("fecha_out", desde)
+      .not("estado_reserva", "in", "(cancelada,no_show)")
+      .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
+      .range(i, i + 999);
+    canalRows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  const canalMap = new Map<string, { reservas: Set<string>; noches: number; revenue: number }>();
+  const finPeriodo = diaISO(hastaCanal, 1);
+  for (const r of canalRows) {
+    const ini = r.fecha_in > desde ? r.fecha_in : desde;
+    const fin = r.fecha_out < finPeriodo ? r.fecha_out : finPeriodo;
+    const noches = Math.round((new Date(fin).getTime() - new Date(ini).getTime()) / 86400_000);
+    if (noches <= 0 || !Number(r.noches)) continue;
     const k = (r.canal as string) || "Sin canal";
-    const acc = canalMap.get(k) ?? { count: 0, revenue: 0 };
-    acc.count += 1;
-    acc.revenue += Number(r.importe_total ?? 0);
+    const acc = canalMap.get(k) ?? { reservas: new Set<string>(), noches: 0, revenue: 0 };
+    acc.reservas.add(r.id_externo_misterplan || r.id);
+    acc.noches += noches;
+    acc.revenue += (Number(r.importe_alojamiento ?? 0) / Number(r.noches)) * noches;
     canalMap.set(k, acc);
-  });
+  }
   const channelMix = Array.from(canalMap.entries())
-    .map(([canal, v]) => ({ canal, ...v }))
+    .map(([canal, v]) => ({ canal, count: v.reservas.size, noches: v.noches, revenue: v.revenue, adr: v.noches ? v.revenue / v.noches : 0 }))
     .sort((a, b) => b.revenue - a.revenue);
   const totalChannelRevenue = channelMix.reduce((s, c) => s + c.revenue, 0);
+  const totalChannelReservas = channelMix.reduce((s, c) => s + c.count, 0);
+  const totalChannelNoches = channelMix.reduce((s, c) => s + c.noches, 0);
 
   // Heatmap calendar — próximos 90 días con ocupación
   const { data: futureCal } = await supabase
@@ -354,11 +372,18 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
             </Link>
           ))}
         </div>
-        {(atajoActivo || (sp.desde && sp.hasta)) && (
-          <div className="text-[11px] text-muted-foreground self-center">
-            Rango: <strong className="text-foreground">{desde}</strong> → <strong className="text-foreground">{hasta}</strong> ({lookbackDays} días)
-          </div>
-        )}
+        {/* Fechas libres, como en la Comparativa YoY (feedback Juan nov). Formulario
+            GET: carga /metricas?desde=…&hasta=…, que ya se aceptaba por URL. */}
+        <form method="get" action="/metricas" className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">Fechas:</span>
+          <input type="date" name="desde" defaultValue={desde} required className="px-2 py-1 text-[11px] rounded border border-border bg-card text-foreground" />
+          <span className="text-[11px] text-muted-foreground">→</span>
+          <input type="date" name="hasta" defaultValue={hasta} required className="px-2 py-1 text-[11px] rounded border border-border bg-card text-foreground" />
+          <button type="submit" className="px-2.5 py-1 text-[11px] font-medium rounded border border-border bg-card text-foreground hover:bg-muted">Aplicar</button>
+        </form>
+        <div className="text-[11px] text-muted-foreground self-center">
+          Rango: <strong className="text-foreground">{desde}</strong> → <strong className="text-foreground">{hasta}</strong> ({lookbackDays} días)
+        </div>
       </div>
 
       {/* Nav de secciones — Bloque 8 */}
@@ -530,9 +555,9 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       {/* Channel mix */}
       {channelMix.length > 0 && totalChannelRevenue > 0 && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
-          <h2 className="text-base font-semibold text-foreground mb-1 flex items-center">Reparto por canal — últimos 30 días<KPITooltip mide="Distribución de los ingresos por canal de venta (Booking, web propia, teléfono, walk-in, etc.) en los últimos 30 días." calculo="SUM(importe_total) agrupado por canal sobre reservas con check-in en últimos 30d, excluyendo canceladas." origen="MisterPlan — el campo canal de cada reserva" sistemas="MrPlan → robot → BD del panel · indica de dónde viene el dinero" /></h2>
+          <h2 className="text-base font-semibold text-foreground mb-1 flex items-center">Reparto por canal — periodo elegido<KPITooltip mide="Por canal de venta (Booking, web propia, teléfono…): reservas, noches vendidas dentro del periodo, ingresos de alojamiento de esas noches y precio medio por noche." calculo="Solo las noches que caen en el periodo. Alojamiento de cada estancia ÷ sus noches × noches dentro del periodo (como Métricas). Sin consumos. Una reserva de varias habitaciones cuenta una vez; sus noches, por habitación. Sin anuladas." origen="MisterPlan — el campo canal de cada reserva" sistemas="MrPlan → robot → BD del panel · indica de dónde viene el dinero" /></h2>
           <p className="text-xs text-muted-foreground mb-4">
-            Distribución de ingresos por canal · {formatCurrency(totalChannelRevenue)} · {(canalRows ?? []).length} reservas
+            {desde} → {hastaCanal} · {formatCurrency(totalChannelRevenue)} de alojamiento · {totalChannelNoches} noches · {totalChannelReservas} reservas
           </p>
           <div className="space-y-3">
             {channelMix.map((c) => {
@@ -542,7 +567,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
                   <div className="flex items-center justify-between text-sm mb-1">
                     <span className="font-medium text-foreground">{canalLabel(c.canal)}</span>
                     <span className="text-muted-foreground tabular-nums">
-                      {formatCurrency(c.revenue)} · {pct.toFixed(0)}% · {c.count} resv.
+                      {formatCurrency(c.revenue)} · {pct.toFixed(0)}% · {c.count} resv. · {c.noches} noches · {formatCurrency(c.adr)}/noche
                     </span>
                   </div>
                   <div className="h-2 bg-muted rounded-full overflow-hidden">
