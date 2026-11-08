@@ -168,13 +168,23 @@ export async function POST(request: Request) {
   const supabase = createAdminClient();
 
   // 4. Fetch competidores for fuzzy name matching
-  const { data: competidores, error: errComp } = await supabase.from("competidores").select("id, nombre");
+  const { data: competidores, error: errComp } = await supabase.from("competidores").select("id, nombre, booking_slug, booking_url");
   if (errComp || !competidores) {
     return NextResponse.json({ error: "Could not fetch competidores", details: errComp?.message }, { status: 500 });
   }
 
+  // Primero por la URL del hotel en Booking (/hotel/es/<slug>.html), que no
+  // depende de cómo escriba Booking el nombre; después por nombre sin tildes.
+  // Solo por nombre, "Hotel Río Bidasoa" no casaba nunca y sus capturas se
+  // descartaban (feedback Juan nov: "sigue abierto").
+  const slugDe = (u: unknown) => String(u ?? "").match(/\/hotel\/es\/([^.?/]+)/)?.[1] ?? null;
+  const slugMap = new Map<string, string>();
+  for (const c of competidores as any[]) {
+    const slug = c.booking_slug || slugDe(c.booking_url);
+    if (slug) slugMap.set(slug, c.id);
+  }
   const normalize = (s: string) =>
-    s.toLowerCase().replace(/hotel\s+|spa|&|\s+/g, " ").trim();
+    s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/hotel\s+|spa|&|\s+/g, " ").trim();
   const compMap = new Map(competidores.map((c) => [normalize(c.nombre), c.id]));
 
   // 5. Build rows
@@ -188,7 +198,8 @@ export async function POST(request: Request) {
       continue;
     }
     const normName = normalize(item.name);
-    let competidor_id: string | undefined = compMap.get(normName);
+    const slugItem = slugDe(item.url) ?? slugDe(item.startUrlOrQuery);
+    let competidor_id: string | undefined = (slugItem ? slugMap.get(slugItem) : undefined) ?? compMap.get(normName);
 
     if (!competidor_id) {
       for (const [k, v] of compMap.entries()) {
