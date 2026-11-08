@@ -71,10 +71,15 @@ function normalizarHabitacion(s: string): Habitacion | string {
   return t;
 }
 
-function splitNombre(s: string): { nombre: string; apellidos: string | null } {
-  const parts = s.trim().split(/\s+/);
-  if (parts.length <= 1) return { nombre: s.trim(), apellidos: null };
-  return { nombre: parts[0], apellidos: parts.slice(1).join(' ') };
+// MisterPlan pone "NOMBRE APELLIDOS DOCUMENTO" en el campo Nombre, y el DNI o
+// el pasaporte acababa dentro de los apellidos (522 de 635 huéspedes el 08/11).
+// Un nombre no lleva cifras: el trozo con cifras es el documento, y va aparte.
+function splitNombre(s: string): { nombre: string; apellidos: string | null; documento: string | null } {
+  const tokens = s.trim().split(/\s+/).filter(Boolean);
+  const documento = tokens.find((t) => /\d/.test(t)) ?? null;
+  const parts = tokens.filter((t) => !/\d/.test(t) && !/^[-.,/]+$/.test(t));
+  if (parts.length <= 1) return { nombre: parts[0] ?? s.trim(), apellidos: null, documento };
+  return { nombre: parts[0], apellidos: parts.slice(1).join(' '), documento };
 }
 
 export async function parseModalReserva(
@@ -157,9 +162,9 @@ export async function parseModalReserva(
   const habitacion = roomsSeen.length > 0 ? roomsSeen[0].hab : '';
 
   const nombreMatch = modalText.match(/Nombre\s+([^\n]+?)(?:\s*Espa[ñn]ol|\n)/i);
-  const { nombre: huesped_nombre, apellidos: huesped_apellidos } = nombreMatch
+  const { nombre: huesped_nombre, apellidos: huesped_apellidos, documento: huesped_documento } = nombreMatch
     ? splitNombre(nombreMatch[1])
-    : { nombre: '', apellidos: null };
+    : { nombre: '', apellidos: null, documento: null };
 
   const emailMatch = modalText.match(/email\s+(\S+@\S+\.\w+)/i);
   const huesped_email = emailMatch?.[1]?.trim() || null;
@@ -490,7 +495,7 @@ export async function parseModalReserva(
       huesped_email,
       huesped_telefono,
       huesped_pais: null,
-      huesped_documento: null,
+      huesped_documento,
       importe_total: totalRoom,
       importe_alojamiento: alojaRoom,
       importe_complementarios: rooms.length === 1
