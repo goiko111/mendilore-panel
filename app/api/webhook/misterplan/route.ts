@@ -89,9 +89,12 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient();
 
-  // Fin de pasada completa: reconciliar (ver reconciliar() más abajo)
+  // Fin de pasada completa: reconciliar (ver reconciliar() más abajo) y,
+  // si está activada, la firma legal automática.
   if ((payload as any).tipo === "fin_pasada") {
-    return reconciliar(supabase, payload as unknown as FinPasada);
+    const res = await reconciliar(supabase, payload as unknown as FinPasada);
+    await dispararFirmaLegal(new URL(request.url).origin).catch(() => null);
+    return res;
   }
 
   // Fechas del scraper de competencia (ver refrescarFechasCompetencia())
@@ -384,6 +387,22 @@ async function refrescarFechasCompetencia(): Promise<Record<string, unknown> & {
   });
   if (!put.ok) return { ok: false, error: `escribir schedule: HTTP ${put.status}` };
   return { ok: true, hoteles: Array.from(slugs), entradas, urls: startUrls.length };
+}
+
+/**
+ * Firma legal automática (feedback Juan, bloque 17). No hay cron en Cloudflare
+ * Pages: el robot termina una pasada cada 2 horas y aquí se llaman los dos
+ * envíos (enlace a reservas nuevas y recordatorios a -7/-3/-1 días), que ya
+ * evitan repetir. Apagado hasta poner LEGAL_AUTO_ENVIO=true en Cloudflare,
+ * después de verificar el dominio en Resend y de que Juan lo apruebe: envía
+ * correos a huéspedes reales.
+ */
+async function dispararFirmaLegal(origin: string) {
+  const secreto = process.env.CRON_SECRET;
+  if (process.env.LEGAL_AUTO_ENVIO !== "true" || !secreto) return;
+  for (const ruta of ["/api/cron/auto-envio-legal", "/api/cron/recordatorios-firma"]) {
+    await fetch(`${origin}${ruta}`, { headers: { "x-cron-secret": secreto } }).catch(() => null);
+  }
 }
 
 // GET para healthcheck rápido
