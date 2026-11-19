@@ -201,7 +201,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
         <StatCard label="Únicos" value={String(totalUnicos)} hint="Con al menos una estancia"
           tooltip={{
             mide: "Personas distintas que han hecho alguna reserva (no se duplican aunque tengan varias estancias).",
-            calculo: "Personas con al menos una estancia no anulada (los filtros solo cambian la lista de abajo). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
+            calculo: "Personas con al menos una estancia no anulada (los filtros solo cambian la lista de abajo). Periodo: todo el histórico cargado (desde junio de 2025), no un mes concreto.",
             origen: "Una persona = mismo nombre y primer apellido si el resto no se contradice («Ana Ruiz» y «Ana Ruiz Gil»), aunque tenga varias fichas: Booking da un email distinto en cada reserva.",
             sistemas: "BD propia (tabla huespedes) — alimentada desde MisterPlan vía scraper.",
           }}
@@ -209,7 +209,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
         <StatCard label="Repetidores" value={String(totalRepetidores)} hint={totalUnicos ? `${((totalRepetidores / totalUnicos) * 100).toFixed(0)}% del total` : "—"}
           tooltip={{
             mide: "Huéspedes que han tenido MÁS DE UNA reserva (no canceladas) — clientes fieles.",
-            calculo: "Por cada persona (mismo nombre y primer apellido si el resto no se contradice, aunque tenga varias fichas o emails), contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde jul 2025).",
+            calculo: "Por cada persona (mismo nombre y primer apellido si el resto no se contradice, aunque tenga varias fichas o emails), contar ESTANCIAS distintas (excluyendo canceladas; una reserva de varias habitaciones cuenta una sola vez). Si conteo > 1 → repetidor. Periodo: todo el histórico cargado (desde junio de 2025).",
             origen: "Cálculo en tiempo real sobre la tabla reservas filtrando estado != cancelado.",
             sistemas: "BD propia (reservas + huespedes). Por debajo, MisterPlan es la fuente original.",
           }}
