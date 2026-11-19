@@ -11,18 +11,20 @@ import { HousekeepingBlock } from "@/components/housekeeping-block";
 import { AlertasInlineBlock } from "@/components/alertas-inline-block";
 import { SyncStatusBanner } from "@/components/sync-status-banner";
 import { TesoreriaBlock } from "@/components/tesoreria-block";
+import { hoyMadrid, sumarDias, unAnoAntes } from "@/lib/fechas";
+import { requiereAccionCobro } from "@/lib/cobros";
 
 export const metadata = { title: "Resumen" };
 
+
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const tomorrow = new Date(today.getTime() + 86400_000).toISOString().slice(0, 10);
-  const in7Days = new Date(today.getTime() + 7 * 86400_000).toISOString().slice(0, 10);
-  const in14Days = new Date(today.getTime() + 14 * 86400_000).toISOString().slice(0, 10);
-  const in30Days = new Date(today.getTime() + 30 * 86400_000).toISOString().slice(0, 10);
-  const startMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+  const todayStr = hoyMadrid();
+  const tomorrow = sumarDias(todayStr, 1);
+  const in14Days = sumarDias(todayStr, 14);
+  const in30Days = sumarDias(todayStr, 30);
+  const startMonth = `${todayStr.slice(0, 8)}01`;
+  const HABS = HABITACIONES_VALIDAS as unknown as string[];
 
   // ============= CÁLCULO DE TODOS LOS KPIs DISPONIBLES (server-side) =============
 
@@ -59,23 +61,14 @@ export default async function DashboardPage() {
   const reservasActivasCount = cntReservasActivas ?? 0;
 
   // D) Llegadas mañana
-  const dayAfterTomorrow = new Date(today.getTime() + 2 * 86400_000).toISOString().slice(0, 10);
+  const dayAfterTomorrow = sumarDias(todayStr, 2);
   const { data: llegadasManana, count: cntLlegadasManana } = await supabase
     .from("reservas")
     .select("id, habitacion, huespedes(nombre, apellidos)", { count: "exact" })
     .gte("fecha_in", tomorrow)
     .lt("fecha_in", dayAfterTomorrow)
-    .not("estado_reserva", "in", "(cancelada,no_show)");
-
-  // E) Cobros pendientes <14d (unificado con tabla)
-  const { data: cobros7d, count: cntCobros7d } = await supabase
-    .from("reservas")
-    .select("id, habitacion, fecha_in, importe_total, importe_moneda, huespedes(nombre, apellidos)", { count: "exact" })
-    .eq("estado_cobro", "pendiente")
-    .gte("fecha_in", todayStr)
-    .lte("fecha_in", in14Days)
-    .order("fecha_in", { ascending: true });
-  const cobros7dImporte = (cobros7d ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
+    .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABS);
 
   // E2) Cobros pendientes <14d — solo los que necesitan ACCIÓN nuestra
   //     (excluye Booking Payments / OTA — esos los gestiona el portal)
@@ -88,19 +81,7 @@ export default async function DashboardPage() {
     .lte("fecha_in", in14Days)
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
     .order("fecha_in", { ascending: true });
-  const cobros14d = (cobros14dRaw ?? []).filter((r: any) => {
-    const fp = (r.forma_pago ?? "").toString().toLowerCase();
-    const canal = (r.canal ?? "").toString().toLowerCase();
-    const anticipo = Number(r.anticipo ?? 0);
-    // Booking Payments / tarjeta virtual → gestiona el portal, no nosotros
-    if (/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard|prepago.*ota|tarjeta.*virtual/i.test(fp)) return false;
-    // Canal Booking → Booking Payments contratado → sin gestión nuestra
-    if (canal === "booking") return false;
-    // Web propia con anticipo REAL cobrado → garantizada, resto a la salida
-    // (feedback Juan 10.08: si NO hay anticipo, como Álvaro, SÍ es pendiente real)
-    if ((canal === "web_propia" || canal === "telefono") && anticipo > 0) return false;
-    return true;
-  });
+  const cobros14d = (cobros14dRaw ?? []).filter(requiereAccionCobro);
 
   // L) Pipeline próximos 30d
   const { data: pipeline30d, count: cntPipeline30d } = await supabase
@@ -108,7 +89,8 @@ export default async function DashboardPage() {
     .select("id, importe_total", { count: "exact" })
     .gte("fecha_in", todayStr)
     .lte("fecha_in", in30Days)
-    .not("estado_reserva", "in", "(cancelada,no_show)");
+    .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABS);
   const pipelineRevenue = (pipeline30d ?? []).reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
 
   // F) Habitaciones libres hoy
@@ -117,8 +99,9 @@ export default async function DashboardPage() {
     .select("id", { count: "exact", head: true })
     .lte("fecha_in", todayStr)
     .gt("fecha_out", todayStr)
-    .not("estado_reserva", "in", "(cancelada,no_show)");
-  const libresHoy = 6 - (cntOcupadasHoy ?? 0);
+    .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABS);
+  const libresHoy = Math.max(0, 6 - (cntOcupadasHoy ?? 0));
 
   // G) Próxima llegada
   const { data: proxLlegada } = await supabase
@@ -126,6 +109,7 @@ export default async function DashboardPage() {
     .select("habitacion, fecha_in, huespedes(nombre, apellidos)")
     .gt("fecha_in", todayStr)
     .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABS)
     .order("fecha_in", { ascending: true })
     .limit(1)
     .single();
@@ -148,53 +132,48 @@ export default async function DashboardPage() {
     .lte("fecha", todayStr);
   const ingresosMes = (metricasMes ?? []).reduce((s, m) => s + Number(m.ingresos_dia ?? 0), 0);
 
-  // J) Ingresos vs target
-  let target: { ingresos_target: number; ocupacion_target_pct: number } | null = null;
-  try {
-    const { data } = await supabase
-      .from("objetivos_mensuales")
-      .select("ingresos_target, ocupacion_target_pct")
-      .eq("year", today.getFullYear())
-      .eq("month", today.getMonth() + 1)
-      .maybeSingle();
-    target = data;
-  } catch {}
-  const ingresosVsTarget = target?.ingresos_target ? (ingresosMes / Number(target.ingresos_target)) * 100 : null;
+  // J) Ingresos del mes frente a las mismas fechas del año anterior
+  //    (antes esta tarjeta calculaba el % sobre el objetivo mensual aunque su
+  //     título y su ayuda hablaban del año anterior)
+  const { data: metricasMesAA } = await supabase
+    .from("metricas_dia")
+    .select("ingresos_dia")
+    .gte("fecha", unAnoAntes(startMonth))
+    .lte("fecha", unAnoAntes(todayStr));
+  const ingresosMesAA = (metricasMesAA ?? []).reduce((s, m) => s + Number(m.ingresos_dia ?? 0), 0);
+  const ingresosVsAA = ingresosMesAA > 0 ? (ingresosMes / ingresosMesAA - 1) * 100 : null;
 
-  // M) Pace 7d (reservas creadas últimos 7d)
-  const hace7d = new Date(today.getTime() - 7 * 86400_000).toISOString();
-  const { count: cntPace7d } = await supabase
+  // M) Ritmo 7d: reservas HECHAS en los últimos 7 días (fecha de reserva de
+  //    MisterPlan, como Métricas) con entrada futura. Una reserva cuenta una vez.
+  const { data: pace7dRows } = await supabase
     .from("reservas")
-    .select("id", { count: "exact", head: true })
-    .gte("creado_en", hace7d)
+    .select("id_externo_misterplan")
+    .gte("fecha_reserva", sumarDias(todayStr, -7))
     .gt("fecha_in", todayStr)
-    .not("estado_reserva", "in", "(cancelada,no_show)");
+    .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABS);
+  const cntPace7d = new Set((pace7dRows ?? []).map((r: any) => r.id_externo_misterplan)).size;
 
-  // N) Cobros pendientes total — solo reservas que requieren ACCIÓN
-  //    (excluye canceladas, no_show, reservas pasadas que MrPlan dejó como pendiente por error,
-  //     y reservas gestionadas por OTA con Booking Payments — forma_pago lo identifica)
+  // N) Pendiente de cobro total: las mismas reservas que piden acción en la
+  //    lista de 14 días, sin límite de fecha de entrada (salida desde hoy).
   const { data: cobrosTotal } = await supabase
     .from("reservas")
-    .select("importe_total, forma_pago, canal, fecha_in")
+    .select("importe_total, forma_pago, canal, anticipo")
     .eq("estado_cobro", "pendiente")
     .in("estado_reserva", ["confirmada", "pendiente"])
-    .gte("fecha_out", todayStr)  // descartar reservas YA finalizadas
-    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
-  // Filtrar también Booking Payments (gestión vía OTA, no nuestra)
-  const cobrosTotalFiltered = (cobrosTotal ?? []).filter((r: any) => {
-    const fp = (r.forma_pago ?? "").toString().toLowerCase();
-    // Marcas habituales de pago por OTA / vía OTA
-    if (/booking[\s_-]*payments|virtual[\s_-]*card|virtualcard|prepago.*ota|tarjeta.*virtual/i.test(fp)) return false;
-    return true;
-  });
-  const cobrosTotalImporte = cobrosTotalFiltered.reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
+    .gte("fecha_out", todayStr)
+    .in("habitacion", HABS);
+  const cobrosTotalImporte = (cobrosTotal ?? []).filter(requiereAccionCobro)
+    .reduce((s: number, r: any) => s + Number(r.importe_total ?? 0), 0);
 
-  // V) Reservas nuevas hoy
-  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-  const { count: cntReservasHoy } = await supabase
+  // V) Reservas nuevas hoy: fecha de reserva de MisterPlan = hoy. Una reserva cuenta una vez.
+  const { data: nuevasHoyRows } = await supabase
     .from("reservas")
-    .select("id", { count: "exact", head: true })
-    .gte("creado_en", startToday);
+    .select("id_externo_misterplan")
+    .gte("fecha_reserva", todayStr)
+    .not("estado_reserva", "in", "(cancelada,no_show)")
+    .in("habitacion", HABS);
+  const cntReservasHoy = new Set((nuevasHoyRows ?? []).map((r: any) => r.id_externo_misterplan)).size;
 
   // KPIs adicionales (huéspedes etc) — calculo bajo demanda en cliente
   // Por ahora paso solo los más útiles
@@ -238,7 +217,7 @@ export default async function DashboardPage() {
     tareas_pendientes: { value: cntTareasHoy },
     // Financieros
     ingresos_mes: { value: ingresosMes },
-    ingresos_vs_target: { value: ingresosVsTarget, target: target?.ingresos_target ? Number(target.ingresos_target) : null },
+    ingresos_vs_target: { value: ingresosVsAA, anterior: ingresosMesAA },
     pipeline_30d: { value: cntPipeline30d ?? 0, importe: pipelineRevenue },
     pace_7d: { value: cntPace7d ?? 0 },
     cobros_pendientes_total: { value: cobrosTotalImporte },
@@ -289,6 +268,14 @@ export default async function DashboardPage() {
       <TesoreriaBlock />
 
       <ResumenConfigurable data={kpisData as any} />
+
+      {/* El aviso de sábanas de arriba trae aquí: solo se enseña cuando alguna
+          habitación ocupada pasa de la cadencia de cambio de sábanas. */}
+      {hkRows.some((r) => r.noches_desde_ultimo_cambio_sabanas >= hkConfig.cadencia_sabanas) && (
+        <div id="housekeeping" className="mt-6 scroll-mt-6">
+          <HousekeepingBlock rows={hkRows} config={hkConfig} reservaIdByHabitacion={hkReservaMap} />
+        </div>
+      )}
 
       {cobros14d && cobros14d.length > 0 && (
         <div className="bg-card border border-border rounded-xl mb-6 mt-6">

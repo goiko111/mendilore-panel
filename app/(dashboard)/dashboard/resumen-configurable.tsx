@@ -21,8 +21,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   checkins_hoy: {
     label: "Check-ins hoy", emoji: "🛬", group: "Operacional",
     tooltip: {
-      mide: "Número de huéspedes que entran hoy a Casa Mendilore.",
-      calculo: "COUNT(reservas) WHERE fecha_in = hoy AND estado_cobro ≠ cancelado",
+      mide: "Habitaciones con entrada hoy. Una reserva de dos habitaciones cuenta dos.",
+      calculo: "Reservas con fecha de entrada hoy en las 6 habitaciones, sin anuladas ni no-show.",
       origen: "MisterPlan (sincronización cada 2 h)",
       sistemas: "MrPlan → robot de sincronización → BD del panel"
     }
@@ -30,8 +30,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   checkouts_hoy: {
     label: "Check-outs hoy", emoji: "🛫", group: "Operacional",
     tooltip: {
-      mide: "Número de huéspedes que salen hoy de Casa Mendilore.",
-      calculo: "COUNT(reservas) WHERE fecha_out = hoy AND estado_cobro ≠ cancelado",
+      mide: "Habitaciones con salida hoy. Una reserva de dos habitaciones cuenta dos.",
+      calculo: "Reservas con fecha de salida hoy en las 6 habitaciones, sin anuladas ni no-show.",
       origen: "MisterPlan (sincronización cada 2 h)",
       sistemas: "MrPlan → robot de sincronización → BD del panel"
     }
@@ -40,7 +40,7 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
     label: "Personas alojadas ahora", emoji: "👥", group: "Operacional",
     tooltip: {
       mide: "Número total de personas alojadas en este momento.",
-      calculo: "SUM(num_huespedes) WHERE fecha_in ≤ hoy AND fecha_out > hoy (2 por habitación si MisterPlan no da el dato)",
+      calculo: "Suma de huéspedes de las habitaciones ocupadas esta noche (entrada hasta hoy y salida después de hoy). Si MisterPlan no da el número, cuenta 2 por habitación.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel (suma por reserva activa)"
     }
@@ -48,8 +48,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   llegadas_manana: {
     label: "Llegadas mañana", emoji: "📅", group: "Operacional",
     tooltip: {
-      mide: "Reservas con entrada prevista mañana.",
-      calculo: "COUNT(reservas) WHERE fecha_in = mañana AND estado_cobro ≠ cancelado",
+      mide: "Habitaciones con entrada mañana.",
+      calculo: "Reservas con fecha de entrada mañana en las 6 habitaciones, sin anuladas ni no-show.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -57,8 +57,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   habitaciones_libres: {
     label: "Habitaciones ocupadas hoy", emoji: "🛏️", group: "Operacional",
     tooltip: {
-      mide: "Habitaciones ocupadas en este momento (subtítulo: libres restantes).",
-      calculo: "COUNT(reservas activas) sobre las 6 habitaciones totales",
+      mide: "Habitaciones ocupadas esta noche, de las 6. Debajo, las que quedan libres.",
+      calculo: "Habitaciones con una estancia que incluye la noche de hoy (entrada hasta hoy y salida después de hoy), sin anuladas ni no-show.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -67,7 +67,7 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
     label: "Próxima llegada", emoji: "⏭️", group: "Operacional",
     tooltip: {
       mide: "Fecha y huésped de la siguiente reserva con entrada posterior a hoy.",
-      calculo: "MIN(fecha_in) WHERE fecha_in > hoy",
+      calculo: "La primera entrada posterior a hoy en las 6 habitaciones, sin anuladas ni no-show.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -76,7 +76,7 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
     label: "Tareas pendientes", emoji: "📋", group: "Operacional",
     tooltip: {
       mide: "Tareas internas marcadas como pendientes (módulo Tareas).",
-      calculo: "COUNT(tareas) WHERE estado = 'pendiente'",
+      calculo: "Tareas sin completar, tengan o no fecha límite.",
       origen: "Panel propio (módulo Tareas)",
       sistemas: "BD del panel"
     }
@@ -84,8 +84,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   reservas_nuevas_hoy: {
     label: "Reservas nuevas hoy", emoji: "✨", group: "Operacional",
     tooltip: {
-      mide: "Reservas creadas hoy (independientemente de la fecha de check-in).",
-      calculo: "COUNT(reservas) WHERE creada_en = hoy",
+      mide: "Reservas hechas hoy, sea cual sea su fecha de entrada.",
+      calculo: "Reservas con fecha de reserva de hoy en MisterPlan, sin anuladas. Una reserva de varias habitaciones cuenta una.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -93,8 +93,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   cobros_14d: {
     label: "Cobros próximos a vencer (14d)", emoji: "💰", group: "Cobros",
     tooltip: {
-      mide: "Reservas con entrada en los próximos 14 días que aún están sin cobrar.",
-      calculo: "COUNT(reservas) WHERE estado_cobro = 'pendiente' AND fecha_in ∈ [hoy, hoy+14d]",
+      mide: "Reservas que entran en los próximos 14 días, siguen sin cobrar y dependen de vosotros. Debajo, lo que suman.",
+      calculo: "Estado de cobro «pendiente» y entrada entre hoy y dentro de 14 días. No incluye las de Booking (las cobra Booking Payments) ni las de web o teléfono con anticipo cobrado (el resto se paga a la salida). Una fila por habitación, como la lista de abajo.",
       origen: "MisterPlan (estado de cobro por reserva)",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -102,8 +102,8 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   cobros_pendientes_total: {
     label: "Pendiente de cobro total", emoji: "💵", group: "Cobros",
     tooltip: {
-      mide: "Importe total acumulado de todas las reservas pendientes de cobro.",
-      calculo: "SUM(importe_total) WHERE estado_cobro = 'pendiente'",
+      mide: "Lo que suman todas las reservas que siguen sin cobrar y dependen de vosotros, entren cuando entren.",
+      calculo: "Importe total de las reservas con estado de cobro «pendiente» y salida desde hoy. Mismas exclusiones que los cobros a 14 días: sin Booking y sin las de web o teléfono con anticipo cobrado.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -138,17 +138,17 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   ingresos_vs_target: {
     label: "Ingresos vs año anterior", emoji: "📈", group: "Financiero",
     tooltip: {
-      mide: "Comparación de los ingresos del mes con el mismo mes del año anterior.",
-      calculo: "((ingresos mes actual ÷ ingresos mismo mes año anterior) − 1) × 100",
-      origen: "MisterPlan (requiere histórico de 12+ meses)",
+      mide: "Ingresos del mes hasta hoy comparados con las mismas fechas del año anterior.",
+      calculo: "(ingresos del día 1 a hoy ÷ ingresos de las mismas fechas hace un año − 1) × 100. Alojamiento y consumos, con cada estancia repartida entre sus noches, como «Ingresos del mes».",
+      origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel → cálculo derivado"
     }
   },
   pipeline_30d: {
     label: "Cartera próximos 30 días", emoji: "🔮", group: "Financiero",
     tooltip: {
-      mide: "Reservas confirmadas con entrada prevista en los próximos 30 días.",
-      calculo: "COUNT(reservas) WHERE estado_reserva = confirmada AND fecha_in ∈ [hoy, hoy+30d]",
+      mide: "Habitaciones reservadas con entrada en los próximos 30 días. Debajo, lo que suman.",
+      calculo: "Reservas con entrada entre hoy y dentro de 30 días en las 6 habitaciones, sin anuladas ni no-show. Una fila por habitación. Importe total, con consumos.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
@@ -156,15 +156,15 @@ const KPI_DEFS: Record<KPIKey, KPIDef> = {
   pace_7d: {
     label: "Ritmo de reservas 7d", emoji: "⚡", group: "Financiero",
     tooltip: {
-      mide: "Reservas creadas en los últimos 7 días para fechas futuras.",
-      calculo: "COUNT(reservas) WHERE creada_en ∈ [hoy-7d, hoy] AND fecha_in > hoy",
+      mide: "Reservas hechas en los últimos 7 días para fechas futuras.",
+      calculo: "Reservas con fecha de reserva en MisterPlan de los últimos 7 días y entrada posterior a hoy, sin anuladas. Una reserva de varias habitaciones cuenta una.",
       origen: "MisterPlan",
       sistemas: "MrPlan → robot → BD del panel"
     }
   }
 };
 
-const DEFAULT_VISIBLES: KPIKey[] = ["checkins_hoy", "checkouts_hoy", "cobros_14d", "pipeline_30d", "cobrado_mes", "habitaciones_libres", "ingresos_mes", "pipeline_30d"];
+const DEFAULT_VISIBLES: KPIKey[] = ["checkins_hoy", "checkouts_hoy", "habitaciones_libres", "cobros_14d", "cobrado_mes", "ingresos_mes", "pipeline_30d"];
 
 function fmtEur(n: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n);
@@ -215,18 +215,18 @@ export function ResumenConfigurable({ data }: { data: Record<string, any> }) {
         return <KPICard label={def.label} value={String(d.value ?? "—")} emoji={def.emoji} tooltip={def.tooltip} hint={d.detail || "Sin reservas futuras"} />;
       case "tareas_pendientes":
         return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
-          hint={d.value > 0 ? "Ver /tareas" : "Sin pendientes"} accent={d.value > 0 ? "amber" : "default"} />;
+          hint={d.value > 0 ? "Sin completar" : "Sin pendientes"} accent={d.value > 0 ? "amber" : "default"} />;
       case "ingresos_mes":
         return <KPICard label={def.label} value={fmtEur(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Acumulado mes" />;
       case "ingresos_vs_target":
         return <KPICard label={def.label}
-          value={d.value !== null && d.value !== undefined ? `${d.value.toFixed(0)}%` : "—"}
+          value={d.value !== null && d.value !== undefined ? `${d.value >= 0 ? "+" : ""}${d.value.toFixed(0)}%` : "—"}
           emoji={def.emoji} tooltip={def.tooltip}
-          hint={d.target ? `Target: ${fmtEur(d.target)}` : "Define en /objetivos"}
-          accent={d.value !== null && d.value >= 100 ? "green" : d.value !== null && d.value >= 70 ? "amber" : "default"} />;
+          hint={d.anterior ? `frente a ${fmtEur(d.anterior)} hace un año` : "Sin datos del año anterior"}
+          accent={d.value !== null && d.value !== undefined && d.value >= 0 ? "green" : "default"} />;
       case "pipeline_30d":
         return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip}
-          hint={d.importe ? `${fmtEur(d.importe)} confirmado` : "Sin reservas futuras"} />;
+          hint={d.importe ? `${fmtEur(d.importe)} en cartera` : "Sin reservas futuras"} />;
       case "pace_7d":
         return <KPICard label={def.label} value={String(d.value ?? 0)} emoji={def.emoji} tooltip={def.tooltip} hint="Reservas nuevas 7d" />;
       case "cobros_pendientes_total":
@@ -289,7 +289,7 @@ export function ResumenConfigurable({ data }: { data: Record<string, any> }) {
             </div>
           ))}
           <p className="text-[11px] text-muted-foreground italic mt-3">
-            Cambios se guardan automáticamente en este navegador. Cada usuario tiene su propia configuración.
+            Los cambios se guardan automáticamente en este navegador: en otro ordenador o en el móvil se eligen aparte.
           </p>
         </div>
       )}

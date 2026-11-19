@@ -2,6 +2,7 @@ export const runtime = 'edge';
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { HABITACIONES_VALIDAS } from "@/lib/constants";
+import { hoyMadrid, sumarDias } from "@/lib/fechas";
 
 type Alerta = {
   tipo: "cobro" | "sabanas" | "legal" | "competencia" | "scraper";
@@ -15,9 +16,8 @@ export async function GET() {
   const supabase = createAdminClient();
   const alertas: Alerta[] = [];
 
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const in3 = new Date(today.getTime() + 3 * 86400_000).toISOString().slice(0, 10);
+  const todayStr = hoyMadrid();
+  const in3 = sumarDias(todayStr, 3);
 
   // 1) Cobros próximos a vencer (3 días) — solo los que requieren ACCIÓN nuestra
   const { data: cobrosUrgRaw } = await supabase
@@ -51,7 +51,7 @@ export async function GET() {
   }
 
   // 2) Reservas con check-in hoy/mañana sin firma legal aceptada
-  const in1 = new Date(today.getTime() + 86400_000).toISOString().slice(0, 10);
+  const in1 = sumarDias(todayStr, 1);
   const { data: reservasProx } = await supabase
     .from("reservas")
     .select("id, id_externo_misterplan")
@@ -90,14 +90,14 @@ export async function GET() {
         severidad: "info",
         titulo: `${pendientesSabanas.length} habitación(es) necesitan cambio de sábanas`,
         detalle: pendientesSabanas.map((h: any) => h.habitacion).join(", "),
-        href: "/dashboard"
+        href: "/dashboard#housekeeping"
       });
     }
   } catch { /* migration aún no aplicada */ }
 
   // 4) Cambios drásticos en competencia (≥15% últimas 24h)
   try {
-    const ayer = new Date(today.getTime() - 86400_000).toISOString().slice(0, 10);
+    const ayer = sumarDias(todayStr, -1);
     // Se compara la MISMA fecha de entrada en dos capturas de días distintos.
     // Antes se comparaban las dos últimas capturas de cada hotel aunque fueran
     // de fechas de entrada diferentes (un martes de noviembre contra un sábado

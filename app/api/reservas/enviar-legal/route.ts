@@ -23,6 +23,11 @@ export async function POST(req: NextRequest) {
   if (!reserva) return NextResponse.json({ error: 'reserva no encontrada' }, { status: 404 });
   const h: any = reserva.huespedes;
   if (!h?.email) return NextResponse.json({ error: 'huésped sin email' }, { status: 400 });
+  // Desde reservas@mendilore.com solo se puede enviar con el dominio verificado
+  // en Resend; sin él, Resend rechaza el envío con un error técnico.
+  if (process.env.RESEND_DOMAIN_VERIFICADO !== "true") {
+    return NextResponse.json({ error: "Envío aún no activado (falta verificar el dominio de correo)" }, { status: 409 });
+  }
 
   // Una sola firma para toda la reserva, aunque tenga varias habitaciones.
   const filas = await filasDeLaReserva(supabase, reserva_id);

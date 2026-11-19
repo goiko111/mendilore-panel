@@ -23,6 +23,9 @@
 
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { hoyMadrid, sumarDias } from "@/lib/fechas";
+import { requiereAccionCobro } from "@/lib/cobros";
+import { HABITACIONES_VALIDAS } from "@/lib/constants";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -143,17 +146,21 @@ export async function GET(request: Request) {
   }
 
   const supabase = createAdminClient();
-  const today = new Date().toISOString().slice(0, 10);
-  const in14Days = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10);
+  const today = hoyMadrid();
+  const in14Days = sumarDias(today, 14);
 
-  const { data: reservas, error } = await supabase
+  // Mismas reservas que la lista "Cobros pendientes próximos al check-in" del
+  // Resumen (antes incluía las de Booking y las que tienen anticipo).
+  const { data: candidatas, error } = await supabase
     .from("reservas")
-    .select("id, habitacion, fecha_in, importe_total, importe_moneda, canal, huespedes(nombre, apellidos, email, telefono)")
+    .select("id, habitacion, fecha_in, importe_total, importe_moneda, canal, forma_pago, anticipo, huespedes(nombre, apellidos, email, telefono)")
     .eq("estado_cobro", "pendiente")
-    .in("estado_reserva", ["confirmada", "completada"])
+    .in("estado_reserva", ["confirmada", "pendiente"])
     .gte("fecha_in", today)
     .lte("fecha_in", in14Days)
+    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
     .order("fecha_in", { ascending: true });
+  const reservas = (candidatas ?? []).filter(requiereAccionCobro);
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 });

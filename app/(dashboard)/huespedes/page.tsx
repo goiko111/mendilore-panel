@@ -66,12 +66,10 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   // 1) Cargar huéspedes (sin limit estrecho)
   let query = supabase
     .from("huespedes")
-    .select("id, nombre, apellidos, email, telefono, pais, nacionalidad, fecha_alta, fuente, notas", { count: "exact" })
+    .select("id, nombre, apellidos, email, telefono, pais, nacionalidad, fecha_alta, fuente, notas, dni, pasaporte, documento", { count: "exact" })
     .order("fecha_alta", { ascending: false })
     .limit(2000);
 
-  if (sp.pais) query = query.eq("pais", sp.pais);
-  if (sp.fuente) query = query.eq("fuente", sp.fuente);
 
   const { data: huespedesRaw, count } = await query;
 
@@ -125,7 +123,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   const conEstancias = (huespedesRaw ?? []).filter((h: any) => statsMap.has(h.id));
   let huespedes = q
     ? conEstancias.filter((h: any) => {
-        const txt = `${h.nombre ?? ""} ${h.apellidos ?? ""} ${h.email ?? ""} ${h.telefono ?? ""}`.toLowerCase();
+        const txt = `${h.nombre ?? ""} ${h.apellidos ?? ""} ${h.email ?? ""} ${h.telefono ?? ""} ${h.dni ?? ""} ${h.pasaporte ?? ""} ${h.documento ?? ""}`.toLowerCase();
         return txt.includes(q);
       })
     : conEstancias;
@@ -177,6 +175,10 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
   if (onlyRepeat) {
     huespedes = huespedes.filter(esRepetidor);
   }
+  // País y fuente solo filtran la lista: las tarjetas son siempre del total.
+  // El país es el mismo que ofrece el desplegable (inferido si falta).
+  if (sp.pais) huespedes = huespedes.filter((h: any) => inferNacionalidad(h) === sp.pais);
+  if (sp.fuente) huespedes = huespedes.filter((h: any) => h.fuente === sp.fuente);
 
   // 6) Países únicos
   const paisesUnicos = Array.from(new Set(conEstancias.map((h: any) => inferNacionalidad(h)).filter(Boolean))).sort();
@@ -199,7 +201,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
         <StatCard label="Únicos" value={String(totalUnicos)} hint="Con al menos una estancia"
           tooltip={{
             mide: "Personas distintas que han hecho alguna reserva (no se duplican aunque tengan varias estancias).",
-            calculo: "Personas con al menos una estancia no anulada (los filtros de país y fuente se aplican). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
+            calculo: "Personas con al menos una estancia no anulada (los filtros solo cambian la lista de abajo). Periodo: todo el histórico cargado (desde jul 2025), no un mes concreto.",
             origen: "Una persona = mismo nombre y primer apellido si el resto no se contradice («Ana Ruiz» y «Ana Ruiz Gil»), aunque tenga varias fichas: Booking da un email distinto en cada reserva.",
             sistemas: "BD propia (tabla huespedes) — alimentada desde MisterPlan vía scraper.",
           }}
@@ -278,7 +280,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
                 <th className="text-left font-medium px-5 py-2.5" title="País de origen del huésped. Inferido por país explícito, prefijo telefónico, TLD de email o nombre típico.">País</th>
                 <th className="text-right font-medium px-5 py-2.5" title="Número total de reservas (no canceladas) que ha tenido este huésped.">Reservas</th>
                 <th className="text-right font-medium px-5 py-2.5" title="Total de noches reservadas por este huésped en todas sus estancias.">Noches</th>
-                <th className="text-right font-medium px-5 py-2.5" title="Suma de importes totales pagados/cobrados por este huésped en todas sus estancias.">Gasto total</th>
+                <th className="text-right font-medium px-5 py-2.5" title="Suma del importe total (alojamiento y consumos) de todas las estancias de esta ficha, cobradas o no.">Gasto total</th>
                 <th className="text-left font-medium px-5 py-2.5" title="Fecha de entrada de la reserva más reciente. Útil para ordenar por actividad.">Última estancia</th>
                 <th className="w-8"></th>
               </tr>
@@ -286,7 +288,7 @@ export default async function HuespedesPage({ searchParams }: { searchParams: Pr
             <tbody className="divide-y divide-border">
               {huespedes.map((h: any) => {
                 const s = statsMap.get(h.id);
-                const esRep = (s?.reservas ?? 0) > 1;
+                const esRep = esRepetidor(h);
                 return (
                   <tr key={h.id} className="hover:bg-muted/30">
                     <td className="px-5 py-3 text-foreground">

@@ -6,27 +6,27 @@ import { X, ChevronRight, Sparkles } from "lucide-react";
 const PASOS = [
   {
     titulo: "👋 Bienvenido al panel de Casa Mendilore",
-    contenido: "Este es tu centro de control. Desde aquí gestionas reservas, huéspedes, métricas, competencia y mucho más. Vamos a ver lo básico en 30 segundos."
+    contenido: "Este es tu centro de control. Desde aquí ves reservas, huéspedes, cobros, métricas y competencia. Vamos a ver lo básico en 30 segundos."
   },
   {
     titulo: "🎯 Personalizar el Resumen",
-    contenido: "La pantalla Resumen muestra los datos más importantes de hoy. Pulsa 'Personalizar KPIs' para elegir qué información quieres ver. Cada usuario tiene su configuración propia."
+    contenido: "La pantalla Resumen muestra lo importante de hoy: llegadas, salidas, cobros y alertas. Pulsa 'Personalizar KPIs' para elegir qué tarjetas ver; la elección se guarda en este navegador."
   },
   {
-    titulo: "📅 Reservas y Calendario",
-    contenido: "En Reservas tienes el listado completo con filtros. En cada fila puedes marcar como cobrada (✅) o mandar el enlace legal al huésped (📧). En Calendario ves la ocupación por habitación tipo Booking Extranet."
+    titulo: "📅 Reservas",
+    contenido: "En Reservas tienes el listado completo con filtros y la exportación a Excel (CSV). En cada reserva puedes enviar al huésped el enlace para aceptar las condiciones (📧): se firma una vez por reserva."
   },
   {
-    titulo: "💰 Cobros — todo lo que necesitas",
-    contenido: "El panel sabe qué cobros tienes pendientes, te alerta cuando vencen los próximos al check-in y te muestra el % de tasa de cobro. Cada cambio queda registrado automáticamente en el audit log."
+    titulo: "💰 Cobros",
+    contenido: "El Resumen te enseña qué cobros dependen de vosotros: la Tesorería y la lista de reservas que entran en los próximos 14 días sin cobrar. El estado de cobro sale de MisterPlan: registrad allí cada cobro y el panel lo recoge en la siguiente sincronización."
   },
   {
-    titulo: "📊 Métricas + Competencia",
-    contenido: "En Métricas tienes los KPIs operacionales (ocupación, ADR, ALOS, Pace 30/60/90) con heatmap calendario. En Competencia ves precios de los 6 hoteles rivales con sugerencia automática para Casa Mendilore."
+    titulo: "📊 Métricas, Comparativa y Competencia",
+    contenido: "En Métricas y en la Comparativa YoY eliges un periodo y ves ocupación, ADR, ingresos y noches frente al año anterior. En Competencia, los precios en Booking de los hoteles de la zona para las próximas fechas."
   },
   {
     titulo: "✅ Listo para empezar",
-    contenido: "Cuando tengas dudas sobre qué datos puede mostrar el panel, mira la sección 'Datos disponibles' del menú. Y recuerda: el sistema corre solo — las reservas de MrPlan se sincronizan cada 2h automáticamente."
+    contenido: "Cada indicador tiene una «i» que explica qué mide y cómo se calcula. Las reservas de MisterPlan se sincronizan solas cada 2 horas de 8:00 a 22:00 y de madrugada."
   }
 ];
 

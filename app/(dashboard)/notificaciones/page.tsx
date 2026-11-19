@@ -71,7 +71,7 @@ export default async function NotificacionesPage({ searchParams }: { searchParam
                   <div className="text-[11px] text-muted-foreground mt-2 flex items-center gap-2">
                     <span>{new Date(n.creada_en).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" })}</span>
                     {n.reserva_id && (
-                      <Link href={`/reservas?q=${n.reserva_id.slice(0, 8)}`} className="text-primary hover:underline">
+                      <Link href={`/reservas?id=${n.reserva_id}`} className="text-primary hover:underline">
                         Ver reserva →
                       </Link>
                     )}

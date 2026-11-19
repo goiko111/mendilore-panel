@@ -8,6 +8,7 @@ import { PageHeader, EmptyState } from "@/components/page-header";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { AccionesReserva } from "./acciones-reserva";
 import { HABITACIONES_VALIDAS , canalLabel, CANALES as CANALES_ALL } from "@/lib/constants";
+import { hoyMadrid } from "@/lib/fechas";
 
 export const metadata = { title: "Reservas" };
 
@@ -34,39 +35,51 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const tiempo: Tiempo = (sp.t === "futuras" || sp.t === "pasadas" || sp.t === "todas") ? sp.t : "todas";
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = hoyMadrid();
 
   // Orden inteligente según el filtro temporal
   const ascending = tiempo === "futuras";
 
-  let query = supabase
-    .from("reservas")
-    .select("id, habitacion, fecha_in, fecha_out, noches, importe_total, importe_moneda, estado_reserva, estado_cobro, canal, id_externo_misterplan, huespedes(nombre, apellidos, email)")
-    .order("fecha_in", { ascending })
-    .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
-    .limit(1000);
-
-  if (tiempo === "futuras") query = query.gte("fecha_in", today);
-  if (tiempo === "pasadas") query = query.lt("fecha_in", today);
-  if (sp.habitacion) query = query.eq("habitacion", sp.habitacion);
-  if (sp.estado_cobro) query = query.eq("estado_cobro", sp.estado_cobro);
-  if (sp.estado_reserva) query = query.eq("estado_reserva", sp.estado_reserva);
-  if (sp.canal) query = query.eq("canal", sp.canal);
-  if (sp.desde) query = query.gte("fecha_in", sp.desde);
-  if (sp.hasta) query = query.lte("fecha_in", sp.hasta);
-  if (sp.id) query = query.eq("id", sp.id);
-
-  const { data: reservasRaw } = await query;
+  // Futuras / Pasadas se filtran después, para que los números de las tres
+  // pestañas salgan siempre sobre el mismo conjunto (antes, en "Futuras" la
+  // pestaña "Pasadas" marcaba 0). Se lee por páginas: Supabase da 1.000 filas
+  // como mucho por consulta.
+  const reservasRaw: any[] = [];
+  for (let i = 0; i < 20000; i += 1000) {
+    let query = supabase
+      .from("reservas")
+      .select("id, habitacion, fecha_in, fecha_out, noches, importe_total, importe_moneda, estado_reserva, estado_cobro, canal, id_externo_misterplan, huespedes(nombre, apellidos, email)")
+      .order("fecha_in", { ascending })
+      .order("id_externo_misterplan", { ascending: true })
+      .order("habitacion", { ascending: true })
+      .in("habitacion", HABITACIONES_VALIDAS as unknown as string[])
+      .range(i, i + 999);
+    if (sp.habitacion) query = query.eq("habitacion", sp.habitacion);
+    if (sp.estado_cobro) query = query.eq("estado_cobro", sp.estado_cobro);
+    if (sp.estado_reserva) query = query.eq("estado_reserva", sp.estado_reserva);
+    if (sp.canal) query = query.eq("canal", sp.canal);
+    if (sp.desde) query = query.gte("fecha_in", sp.desde);
+    if (sp.hasta) query = query.lte("fecha_in", sp.hasta);
+    if (sp.id) query = query.eq("id", sp.id);
+    const { data } = await query;
+    reservasRaw.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
 
   // Cargar aceptaciones de las reservas mostradas (Fase 3)
-  const reservaIds = (reservasRaw ?? []).map((r: any) => r.id);
-  const { data: aceptacionesData } = reservaIds.length
-    ? await supabase
-        .from("aceptaciones_condiciones")
-        .select("reserva_id")
-        .in("reserva_id", reservaIds)
-    : { data: [] };
-  const aceptadas = new Set<string>((aceptacionesData ?? []).map((a: any) => a.reserva_id));
+  //  Se leen todas (es una tabla pequeña): con cientos de reservas, pasar sus
+  //  ids en la consulta hace una URL demasiado larga y la consulta fallaba en
+  //  silencio, con lo que ninguna reserva salía firmada.
+  const aceptadas = new Set<string>();
+  for (let i = 0; i < 50000; i += 1000) {
+    const { data } = await supabase
+      .from("aceptaciones_condiciones")
+      .select("reserva_id")
+      .not("reserva_id", "is", null)
+      .range(i, i + 999);
+    for (const a of data ?? []) aceptadas.add((a as any).reserva_id);
+    if (!data || data.length < 1000) break;
+  }
   // La firma va por reserva, no por habitación (feedback Juan nov: una
   // reserva de 6 habitaciones salía como 6 procesos). Solo la primera fila de
   // cada reserva muestra el estado y el botón; si cualquier habitación está
@@ -81,25 +94,35 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
 
   // Filtro client-side por texto libre (q) sobre nombre/email del huésped
   const q = sp.q?.toLowerCase().trim();
-  const reservas = q
+  const filtradas = q
     ? (reservasRaw ?? []).filter((r: any) => {
         const h = r.huespedes as any;
         const txt = `${h?.nombre ?? ""} ${h?.apellidos ?? ""} ${h?.email ?? ""}`.toLowerCase();
         return txt.includes(q);
       })
     : (reservasRaw ?? []);
+  const numFuturas = filtradas.filter((r: any) => r.fecha_in >= today).length;
+  const numPasadas = filtradas.length - numFuturas;
+  const reservas = tiempo === "futuras" ? filtradas.filter((r: any) => r.fecha_in >= today)
+    : tiempo === "pasadas" ? filtradas.filter((r: any) => r.fecha_in < today)
+    : filtradas;
 
   const totalImporte = reservas.reduce((acc: number, r: any) => acc + Number(r.importe_total || 0), 0);
   const totalNoches = reservas.reduce((acc: number, r: any) => acc + Number(r.noches || 0), 0);
-  const totalFuturas = reservas.filter((r: any) => r.fecha_in >= today).length;
-  const totalPasadas = reservas.filter((r: any) => r.fecha_in < today).length;
+  const numReservas = new Set(reservas.map((r: any) => r.id_externo_misterplan || r.id)).size;
   const totalCobrado = reservas.filter((r: any) => r.estado_cobro === "cobrado").reduce((acc: number, r: any) => acc + Number(r.importe_total || 0), 0);
   const totalPendiente = reservas.filter((r: any) => r.estado_cobro === "pendiente").reduce((acc: number, r: any) => acc + Number(r.importe_total || 0), 0);
 
   // URL de exportación con los mismos filtros aplicados
   const exportParams = new URLSearchParams();
-  if (sp.desde) exportParams.set("from", sp.desde);
-  if (sp.hasta) exportParams.set("to", sp.hasta);
+  if (tiempo !== "todas") exportParams.set("t", tiempo);
+  if (sp.q) exportParams.set("q", sp.q);
+  if (sp.habitacion) exportParams.set("habitacion", sp.habitacion);
+  if (sp.estado_cobro) exportParams.set("estado_cobro", sp.estado_cobro);
+  if (sp.estado_reserva) exportParams.set("estado_reserva", sp.estado_reserva);
+  if (sp.canal) exportParams.set("canal", sp.canal);
+  if (sp.desde) exportParams.set("desde", sp.desde);
+  if (sp.hasta) exportParams.set("hasta", sp.hasta);
   const exportUrl = exportParams.toString() ? `/api/export/reservas?${exportParams}` : "/api/export/reservas";
 
   // Helper para mantener otros params al cambiar tiempo
@@ -121,7 +144,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader
         title="Reservas y exportación"
-        description={`${reservas.length} reservas · ${totalNoches} noches · ${formatCurrency(totalImporte)} total · ✅ ${formatCurrency(totalCobrado)} cobrado · 🟡 ${formatCurrency(totalPendiente)} pendiente · ${totalFuturas} futuras / ${totalPasadas} pasadas`}
+        description={`${numReservas} reservas (${reservas.length} habitaciones) · ${totalNoches} noches · ${formatCurrency(totalImporte)} total · ✅ ${formatCurrency(totalCobrado)} cobrado · 🟡 ${formatCurrency(totalPendiente)} pendiente`}
         actions={
           <Link
             href={exportUrl}
@@ -133,15 +156,15 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
         }
       />
       <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/40 rounded-lg p-3 mb-4 text-xs text-emerald-900 dark:text-emerald-200">
-        <strong className="font-semibold">¿Para qué sirve esta pantalla?</strong> Complementa a MisterPlan con tres cosas que MrPlan no hace: exportación a Excel del histórico para contabilidad y subvenciones, botón rápido para marcar cobros sin entrar a MrPlan y envío del enlace de aceptación legal por reserva (Fase 3).
+        <strong className="font-semibold">¿Para qué sirve esta pantalla?</strong> Complementa a MisterPlan con dos cosas que MrPlan no hace: exportar a Excel (CSV) las reservas que estás viendo, con los mismos filtros, y enviar al huésped el enlace para aceptar las condiciones, una vez por reserva. Los cobros se registran en MisterPlan: el panel los recoge en la siguiente sincronización.
       </div>
 
       {/* Filtro temporal pestañas */}
       <div className="flex items-center gap-1 bg-muted/40 rounded-lg p-1 border border-border w-fit mb-5">
         {([
-          { key: "todas" as Tiempo, label: `Todas (${reservas.length})` },
-          { key: "futuras" as Tiempo, label: `Futuras (${totalFuturas})` },
-          { key: "pasadas" as Tiempo, label: `Pasadas (${totalPasadas})` }
+          { key: "todas" as Tiempo, label: `Todas (${filtradas.length})` },
+          { key: "futuras" as Tiempo, label: `Futuras (${numFuturas})` },
+          { key: "pasadas" as Tiempo, label: `Pasadas (${numPasadas})` }
         ]).map((opt) => (
           <Link
             key={opt.key}

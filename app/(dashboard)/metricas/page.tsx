@@ -100,8 +100,10 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     hasta = diaISO(todayStr, -1);
   }
   // Rango extendido para el gráfico: 60d atrás → 90d adelante (cubre histórico + pipeline)
-  const desdeChart = new Date(today.getTime() - 60 * 86400_000).toISOString().slice(0, 10);
-  const hastaChart = new Date(today.getTime() + 90 * 86400_000).toISOString().slice(0, 10);
+  const desdeChart = diaISO(todayStr, -60);
+  const hastaChart = diaISO(todayStr, 90);
+  // Días del periodo que ya han pasado (las tarjetas solo suman hasta hoy)
+  const diasMostrados = hasta < todayStr ? lookbackDays : Math.max(0, diasEntre(desde, todayStr));
 
   // KPIs últimos N días (sin futuro)
   const { data: metricasPeriodo } = await supabase
@@ -165,13 +167,12 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   // KPIs MrPlan: Lead time, ALOS, Cancel rate, Pace, Channel mix
   // ===========================
   // Feedback Juan 10.08: ALOS y antelación deben responder al periodo seleccionado
-  const hace90d = new Date(today.getTime() - lookbackDays * 86400_000).toISOString();
-  const hace7d = new Date(today.getTime() - 7 * 86400_000).toISOString();
-  const inicioMes = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  const finMes = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
-  const en30d = new Date(today.getTime() + 30 * 86400_000).toISOString().slice(0, 10);
-  const en60d = new Date(today.getTime() + 60 * 86400_000).toISOString().slice(0, 10);
-  const en90d = new Date(today.getTime() + 90 * 86400_000).toISOString().slice(0, 10);
+  const hace7d = diaISO(todayStr, -7);
+  const inicioMes = `${todayStr.slice(0, 8)}01`;
+  const finMes = new Date(Date.UTC(Number(todayStr.slice(0, 4)), Number(todayStr.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  const en30d = diaISO(todayStr, 30);
+  const en60d = diaISO(todayStr, 60);
+  const en90d = diaISO(todayStr, 90);
 
   // Lead time: reservas CREADAS en el periodo · ALOS: reservas con CHECK-IN en el periodo
   // Antelación con fecha_reserva (la fecha de reserva que da MisterPlan).
@@ -180,7 +181,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const { data: leadRows } = await supabase
     .from("reservas")
     .select("fecha_in, fecha_out, noches, fecha_reserva, estado_cobro")
-    .gte("fecha_reserva", hace90d)
+    .gte("fecha_reserva", desde)
+    .lt("fecha_reserva", diaISO(hasta, 1))
     .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
   const { data: alosRows } = await supabase
@@ -231,12 +233,12 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   // Pace 7d → futuro (bookings creados últimos 7d)
   const { data: paceRows } = await supabase
     .from("reservas")
-    .select("id, importe_total, fecha_in")
+    .select("id, id_externo_misterplan, importe_total, fecha_in")
     .gte("fecha_reserva", hace7d)
     .gte("fecha_in", todayStr)
     .not("estado_reserva", "in", "(cancelada,no_show)")
     .in("habitacion", HABITACIONES_VALIDAS as unknown as string[]);
-  const paceCount = (paceRows ?? []).length;
+  const paceCount = new Set((paceRows ?? []).map((r) => r.id_externo_misterplan ?? r.id)).size;
   const paceRevenue = (paceRows ?? []).reduce((sum, r) => sum + Number(r.importe_total ?? 0), 0);
 
   // Channel mix del periodo elegido. Antes: últimos 30 días fijos, importe
@@ -312,7 +314,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       const lunes = new Date(d.getTime() + offset * 86400_000).toISOString().slice(0, 10);
       const acc = map.get(lunes) ?? { fecha: lunes, occupancy_pct: 0, adr: 0, revpar: 0, ingresos_dia: 0, habitaciones_ocupadas: 0, count: 0 };
       acc.occupancy_pct += Number(m.occupancy_pct ?? 0);
-      acc.adr += Number(m.adr ?? 0);
+      acc.adr += Number(m.adr ?? 0) * Number(m.habitaciones_ocupadas ?? 0); // = alojamiento del día
       acc.revpar += Number(m.revpar ?? 0);
       acc.ingresos_dia += Number(m.ingresos_dia ?? 0);
       acc.habitaciones_ocupadas += Number(m.habitaciones_ocupadas ?? 0);
@@ -323,7 +325,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       .map((s) => ({
         fecha: s.fecha,
         occupancy_pct: s.count > 0 ? s.occupancy_pct / s.count : 0,
-        adr: s.habitaciones_ocupadas > 0 ? s.ingresos_dia / s.habitaciones_ocupadas : 0,
+        // ADR solo alojamiento, como las tarjetas (antes dividía ingresos con consumos)
+        adr: s.habitaciones_ocupadas > 0 ? s.adr / s.habitaciones_ocupadas : 0,
         revpar: s.count > 0 ? s.revpar / s.count : 0,
         ingresos_semana: s.ingresos_dia,
         noches: s.habitaciones_ocupadas
@@ -382,7 +385,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           <button type="submit" className="px-2.5 py-1 text-[11px] font-medium rounded border border-border bg-card text-foreground hover:bg-muted">Aplicar</button>
         </form>
         <div className="text-[11px] text-muted-foreground self-center">
-          Rango: <strong className="text-foreground">{desde}</strong> → <strong className="text-foreground">{hasta}</strong> ({lookbackDays} días)
+          Rango: <strong className="text-foreground">{desde}</strong> → <strong className="text-foreground">{hasta}</strong> ({lookbackDays} días{diasMostrados < lookbackDays ? `, ${diasMostrados} ya pasados` : ""})
         </div>
       </div>
 
@@ -404,10 +407,10 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `Últimos ${lookbackDays} días`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "noches vendidas ÷ (6 habitaciones × días del periodo) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `${diasMostrados} días`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "noches vendidas ÷ (6 habitaciones × días del periodo) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
         <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={hayComparativa ? `${varPct(adrMedio, adrYA) ?? "—"} vs año anterior` : `${totalNoches} noches`} tooltip={{ mide: "ADR (Average Daily Rate) — precio medio por habitación vendida en el periodo.", calculo: "ingresos de alojamiento del periodo ÷ noches vendidas. Sin consumos ni extras.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
-        <StatCard label={`Ingresos ${lookbackDays}d`} value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} tooltip={{ mide: "Ingresos producidos en las noches del periodo seleccionado (alojamiento y consumos).", calculo: "Alojamiento repartido entre las noches de cada estancia + consumos en el día en que se hicieron, para las noches del periodo.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
-        <StatCard label="Noches vendidas" value={String(totalNoches)} hint={hayComparativa ? `${varPct(totalNoches, totalNochesYA) ?? "—"} vs año anterior` : `De ${lookbackDays * 6} disponibles`} tooltip={{ mide: "Suma total de noches reservadas en el periodo.", calculo: "SUM(noches) sobre reservas confirmadas del periodo", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="Ingresos del periodo" value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} tooltip={{ mide: "Ingresos producidos en las noches del periodo seleccionado (alojamiento y consumos).", calculo: "Alojamiento repartido entre las noches de cada estancia + consumos en el día en que se hicieron, para las noches del periodo.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="Noches vendidas" value={String(totalNoches)} hint={hayComparativa ? `${varPct(totalNoches, totalNochesYA) ?? "—"} vs año anterior` : `De ${diasMostrados * 6} disponibles`} tooltip={{ mide: "Noches de habitación vendidas en el periodo, hasta hoy.", calculo: "Cada habitación ocupada cada noche del periodo cuenta una noche. Sin anuladas ni no-show. Una estancia que empieza antes o acaba después del periodo solo cuenta sus noches dentro.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
       </div>
 
       {!hayComparativa && (
@@ -421,10 +424,10 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         <StatCard
           label="Antelación media de reserva"
           value={leadTimes.length > 0 ? `${leadTimeMedio.toFixed(1)} d` : "—"}
-          hint={leadTimes.length > 0 ? `${leadTimes.length} reservas 90d` : "Esperando más reservas"}
+          hint={leadTimes.length > 0 ? `${leadTimes.length} reservas hechas en el periodo` : "Sin reservas hechas en el periodo"}
           tooltip={{
             mide: "Cuánto tiempo antes del check-in se hacen las reservas, de media. Indica cuánta visibilidad de futuro tenéis.",
-            calculo: "Para las reservas HECHAS en el periodo: días entre la fecha de reserva en MisterPlan y la fecha de entrada. Se promedia.",
+            calculo: "Para las reservas HECHAS en el periodo elegido (fecha de reserva entre desde y hasta): días entre la fecha de reserva en MisterPlan y la fecha de entrada. Se promedia por habitación. Quedan fuera las fichas sin fecha de reserva.",
             origen: "MisterPlan — campo «Fecha Reserva» de cada ficha.",
             sistemas: "MrPlan → robot → BD del panel. Cuanto más alto el número, más planificado el negocio.",
           }}
@@ -432,10 +435,10 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         <StatCard
           label="Estancia media (ALOS)"
           value={alosMedio > 0 ? `${alosMedio.toFixed(1)} noches` : "—"}
-          hint={alosMedio > 0 ? `${nochesArr.length} reservas` : "Esperando más reservas"}
+          hint={alosMedio > 0 ? `${nochesArr.length} estancias con entrada en el periodo` : "Sin entradas en el periodo"}
           tooltip={{
             mide: "ALOS (Average Length of Stay) — cuántas noches dura cada estancia, de media. Importante porque a más noches, menos rotación de limpieza y mejor margen operativo.",
-            calculo: "SUM(noches) ÷ COUNT(reservas) sobre reservas no canceladas del periodo.",
+            calculo: "Media de noches de las estancias que ENTRAN en el periodo elegido, por habitación (una reserva de dos habitaciones y 4 noches cuenta como dos estancias de 4 noches). Sin anuladas ni no-show.",
             origen: "MisterPlan — cada reserva trae sus noches calculadas (fecha_out - fecha_in).",
             sistemas: "MrPlan → robot → BD del panel.",
           }}
@@ -456,8 +459,8 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
           value={String(paceCount)}
           hint={paceCount > 0 ? `${formatCurrency(paceRevenue)} en cartera` : "Sin nuevas reservas"}
           tooltip={{
-            mide: "Cuántas reservas nuevas han entrado en los últimos 7 días (creadas, no llegadas).",
-            calculo: "Reservas cuya fecha de reserva en MisterPlan es de los últimos 7 días y con entrada futura. La cartera es la suma de su importe total.",
+            mide: "Cuántas reservas nuevas han entrado en los últimos 7 días (hechas, no llegadas). No depende del periodo elegido.",
+            calculo: "Reservas cuya fecha de reserva en MisterPlan es de los últimos 7 días y con entrada desde hoy. Una reserva de varias habitaciones cuenta una. La cartera es la suma de su importe total.",
             origen: "MisterPlan — campo «Fecha Reserva» de cada ficha.",
             sistemas: "MrPlan → robot → BD del panel. Útil para ver si esta semana está entrando más o menos volumen que la anterior.",
           }}
@@ -482,22 +485,22 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
               <div className="rounded-lg border border-border p-3">
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Ocupacion</div>
                 <div className="text-sm font-semibold text-foreground mt-1">{varPct(occupancyMedia, occupancyYA) ?? "—"}</div>
-                <div className="text-[10px] text-muted-foreground">{formatPercent(occupancyYA)} hace 1 ano</div>
+                <div className="text-[10px] text-muted-foreground">{formatPercent(occupancyYA)} hace 1 año</div>
               </div>
               <div className="rounded-lg border border-border p-3">
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">ADR</div>
                 <div className="text-sm font-semibold text-foreground mt-1">{varPct(adrMedio, adrYA) ?? "—"}</div>
-                <div className="text-[10px] text-muted-foreground">{formatCurrency(adrYA)} hace 1 ano</div>
+                <div className="text-[10px] text-muted-foreground">{formatCurrency(adrYA)} hace 1 año</div>
               </div>
               <div className="rounded-lg border border-border p-3">
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Ingresos</div>
                 <div className="text-sm font-semibold text-foreground mt-1">{varPct(totalIngresos, totalIngresosYA) ?? "—"}</div>
-                <div className="text-[10px] text-muted-foreground">{formatCurrency(totalIngresosYA)} hace 1 ano</div>
+                <div className="text-[10px] text-muted-foreground">{formatCurrency(totalIngresosYA)} hace 1 año</div>
               </div>
               <div className="rounded-lg border border-border p-3">
                 <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Noches</div>
                 <div className="text-sm font-semibold text-foreground mt-1">{varPct(totalNoches, totalNochesYA) ?? "—"}</div>
-                <div className="text-[10px] text-muted-foreground">{totalNochesYA} hace 1 ano</div>
+                <div className="text-[10px] text-muted-foreground">{totalNochesYA} hace 1 año</div>
               </div>
             </div>
           </div>
@@ -506,12 +509,9 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
             <div className="flex items-start gap-3">
               <div className="text-amber-700 dark:text-amber-400 text-lg leading-none">📊</div>
               <div className="text-xs">
-                <div className="text-sm font-semibold text-foreground mb-1">Comparativa YoY no disponible aun</div>
+                <div className="text-sm font-semibold text-foreground mb-1">Sin datos del año anterior para este periodo</div>
                 <p className="text-muted-foreground leading-relaxed">
-                  Para mostrar comparativa con el mismo periodo del ano anterior necesitamos haber cargado los datos de MisterPlan de hace 1 ano. Actualmente solo hay datos de las ultimas semanas.
-                </p>
-                <p className="text-muted-foreground leading-relaxed mt-2">
-                  <strong>Proximo paso:</strong> cargar historico de MisterPlan de los ultimos 12 meses (planificado para proxima sesion, ~2 h).
+                  Los datos cargados empiezan en junio de 2025: para fechas anteriores no hay con qué comparar. También pasa si el periodo elegido todavía no ha empezado.
                 </p>
               </div>
             </div>
@@ -531,21 +531,21 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
         <h2 className="text-base font-semibold text-foreground mb-1">Ritmo de reservas futuras</h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Reservas confirmadas con entrada en cada ventana · {formatCurrency(paceRev90)} pipeline total 90d
+          Habitaciones reservadas con entrada en cada ventana desde hoy (no depende del periodo elegido) · {formatCurrency(paceRev90)} en los próximos 90 días
         </p>
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg border border-border p-3 text-center">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 30 d<KPITooltip mide="Reservas confirmadas con check-in en los próximos 30 días." calculo="COUNT(reservas) WHERE fecha_in BETWEEN hoy Y hoy+30d AND estado_reserva != cancelada" origen="MisterPlan" sistemas="MrPlan → robot → BD del panel · pipeline cercano" /></div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 30 d<KPITooltip mide="Habitaciones reservadas con entrada en los próximos 30 días." calculo="Reservas con entrada entre hoy y dentro de 30 días en las 6 habitaciones, sin anuladas ni no-show. Una fila por habitación." origen="MisterPlan" sistemas="MrPlan → robot → BD del panel" /></div>
             <div className="text-2xl font-semibold text-foreground mt-1">{pace30}</div>
             <div className="text-xs text-muted-foreground mt-0.5">reservas</div>
           </div>
           <div className="rounded-lg border border-border p-3 text-center">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 60 d<KPITooltip mide="Reservas confirmadas con check-in en los próximos 60 días." calculo="COUNT(reservas) WHERE fecha_in BETWEEN hoy Y hoy+60d AND estado_reserva != cancelada" origen="MisterPlan" sistemas="MrPlan → robot → BD del panel · pipeline a 2 meses vista" /></div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 60 d<KPITooltip mide="Habitaciones reservadas con entrada en los próximos 60 días." calculo="Reservas con entrada entre hoy y dentro de 60 días en las 6 habitaciones, sin anuladas ni no-show. Una fila por habitación." origen="MisterPlan" sistemas="MrPlan → robot → BD del panel" /></div>
             <div className="text-2xl font-semibold text-foreground mt-1">{pace60}</div>
             <div className="text-xs text-muted-foreground mt-0.5">reservas</div>
           </div>
           <div className="rounded-lg border border-border p-3 text-center">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 90 d<KPITooltip mide="Reservas confirmadas con check-in en los próximos 90 días." calculo="COUNT(reservas) WHERE fecha_in BETWEEN hoy Y hoy+90d AND estado_reserva != cancelada" origen="MisterPlan" sistemas="MrPlan → robot → BD del panel · pipeline trimestral total" /></div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground flex items-center">Próximos 90 d<KPITooltip mide="Habitaciones reservadas con entrada en los próximos 90 días." calculo="Reservas con entrada entre hoy y dentro de 90 días en las 6 habitaciones, sin anuladas ni no-show. Una fila por habitación." origen="MisterPlan" sistemas="MrPlan → robot → BD del panel" /></div>
             <div className="text-2xl font-semibold text-foreground mt-1">{pace90}</div>
             <div className="text-xs text-muted-foreground mt-0.5">reservas</div>
           </div>
@@ -594,12 +594,11 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       <div className="bg-card border border-border rounded-xl p-5 mb-6">
         <h2 className="text-base font-semibold text-foreground mb-1">Mapa de calor — ocupación próximos 90 días</h2>
         <p className="text-xs text-muted-foreground mb-4">
-          Cada celda = 1 día · color verde más intenso = mayor ocupación · gris = sin datos
+          Cada celda = 1 día · color verde más intenso = mayor ocupación · gris = ninguna habitación reservada
         </p>
         <div className="grid grid-cols-[repeat(15,minmax(0,1fr))] sm:grid-cols-[repeat(30,minmax(0,1fr))] gap-1">
           {Array.from({ length: 90 }, (_, i) => {
-            const d = new Date(today.getTime() + i * 86400_000);
-            const ds = d.toISOString().slice(0, 10);
+            const ds = diaISO(todayStr, i);
             const pct = calMap.get(ds);
             const intensity = pct === undefined ? 0 : Math.min(100, Math.round(pct));
             const bg = intensity === 0
@@ -612,7 +611,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
               <div
                 key={i}
                 className={`aspect-square rounded-sm ${bg}`}
-                title={`${ds} · ${pct !== undefined ? formatPercent(pct) : "sin datos"}`}
+                title={`${ds} · ${pct ? formatPercent(pct) : "ninguna habitación reservada"}`}
               />
             );
           })}

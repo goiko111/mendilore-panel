@@ -128,6 +128,13 @@ export function TesoreriaBlock() {
         })}
       </div>
 
+      {filtro && detalleFiltrado.length === 0 && (
+        <div className="rounded-xl border border-border px-3 py-3 text-[11px] text-muted-foreground flex items-center justify-between">
+          <span>{META[filtro]?.label}: no hay reservas que requieran seguimiento (la lista solo enseña reservas con salida desde hoy y algo por cobrar).</span>
+          <button onClick={() => setFiltro(null)} className="underline hover:no-underline">ver todas</button>
+        </div>
+      )}
+
       {detalleFiltrado.length > 0 && (
         <div className="rounded-xl border border-border overflow-hidden">
           <div className="px-3 py-2 bg-muted/40 text-[11px] text-muted-foreground flex items-center justify-between">

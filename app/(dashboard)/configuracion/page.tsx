@@ -29,38 +29,15 @@ export default async function ConfiguracionPage() {
     .from("aceptaciones_condiciones")
     .select("*", { count: "exact", head: true });
 
-  // Detectar qué migrations se han aplicado en BD (sesión 12)
-  // Cada check es un SELECT mínimo: si tira error la migration no está
-  type CheckEstado = { aplicada: boolean; nota?: string };
-  async function checkMig(testFn: () => PromiseLike<any>): Promise<CheckEstado> {
-    try {
-      const r = await testFn();
-      if (r.error) return { aplicada: false, nota: r.error.message?.slice(0, 80) };
-      return { aplicada: true };
-    } catch (e: any) {
-      return { aplicada: false, nota: String(e?.message ?? e).slice(0, 80) };
-    }
-  }
 
-  const mig0017 = await checkMig(() => admin.from("aceptaciones_recordatorios").select("id").limit(1));
-  const mig0018 = await checkMig(() => admin.from("reservas").select("legal_enviado_en").limit(1));
-  const mig0019 = await checkMig(() => admin.from("competidores").select("es_propia").eq("es_propia", true).limit(1));
-
-  const migrationsPendientes: { id: string; titulo: string; estado: CheckEstado; describe: string }[] = [
-    { id: "0017", titulo: "Recordatorios firma legal", estado: mig0017, describe: "Tabla aceptaciones_recordatorios — controla duplicados del cron de recordatorios -7/-3/-1d." },
-    { id: "0018", titulo: "Auto-envío legal", estado: mig0018, describe: "Columna reservas.legal_enviado_en — marca cuándo el sistema envió el enlace al crear la reserva." },
-    { id: "0019", titulo: "Casa Mendilore en competencia", estado: mig0019, describe: "Columna competidores.es_propia + función adr_propio_para_fecha + fila propia." },
-  ];
-
-  const numAplicadas = migrationsPendientes.filter(m => m.estado.aplicada).length;
-  const todasAplicadas = numAplicadas === migrationsPendientes.length;
-
+  const correoActivo = process.env.RESEND_DOMAIN_VERIFICADO === "true";
   const integraciones = [
-    { name: "MisterPlan / RuralGest", status: "pendiente", note: "Scraper plantilla lista (D-132). Implementación sesión 10." },
-    { name: "Make.com — Org Casa Mendilore", status: "activo", note: "Org 7922550 · eu1 · Free 1.000 credits/mes (D-109)" },
-    { name: "Apify Booking scraper", status: "activo", note: "Schedule lunes 7am Madrid · webhook nativo (D-118, D-132)" },
-    { name: "Supabase", status: "activo", note: "Project mendilore-panel · eu-central-1 · 4 migrations (D-108)" },
-    { name: "Cloudflare Pages", status: "activo", note: "panel.mendilore.com · auto-deploy desde GitHub main" }
+    { name: "MisterPlan", status: "activo", note: "Robot de reservas en Apify: cada 2 horas de 8:00 a 22:00, cada noche a las 3:00 y una pasada completa los domingos a las 4:00." },
+    { name: "Booking.com (competencia)", status: "activo", note: "Robot de competencia en Apify: cada día a las 6:00, para entradas dentro de 7, 14, 30, 60, 90 y 180 días." },
+    { name: "Correo al huésped (Resend)", status: correoActivo ? "activo" : "pendiente", note: correoActivo ? "Enlace de condiciones desde reservas@mendilore.com." : "Se activa al verificar el dominio mendilore.com en Resend. Hasta entonces no se envían correos a huéspedes." },
+    { name: "Google Analytics", status: "activo", note: "Visitas de mendilore.com en Métricas." },
+    { name: "Base de datos (Supabase)", status: "activo", note: "Reservas, huéspedes, firmas y precios de competencia." },
+    { name: "Cloudflare Pages", status: "activo", note: "panel.mendilore.com" }
   ];
 
   const tiposLegibles: Record<string, string> = {
@@ -165,37 +142,6 @@ export default async function ConfiguracionPage() {
           </p>
         </section>
 
-        <section className="bg-card border border-border rounded-xl p-5">
-          <h2 className="text-base font-semibold text-foreground mb-1 flex items-center gap-2">
-            <span>Estado del sistema</span>
-            {todasAplicadas
-              ? <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-2 py-0.5 rounded-full font-medium">✓ Todo OK</span>
-              : <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded-full font-medium">{numAplicadas}/{migrationsPendientes.length} migrations aplicadas</span>}
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">
-            Estado de las últimas migraciones de base de datos creadas en sesión 12. Si alguna aparece pendiente, pasarle el script <strong>MIGRATIONS_BATCH_SESION13.sql</strong> al SQL Editor de Supabase.
-          </p>
-          <ul className="divide-y divide-border">
-            {migrationsPendientes.map((m) => (
-              <li key={m.id} className="py-3 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-foreground">{m.id} — {m.titulo}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{m.describe}</div>
-                  {!m.estado.aplicada && m.estado.nota && (
-                    <div className="text-[10px] text-muted-foreground mt-1 font-mono">DB dice: {m.estado.nota}</div>
-                  )}
-                </div>
-                <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                  m.estado.aplicada
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                    : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                }`}>
-                  {m.estado.aplicada ? "✓ aplicada" : "⚠ pendiente"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
 
         <section className="bg-card border border-border rounded-xl p-5">
           <h2 className="text-base font-semibold text-foreground mb-1">Integraciones</h2>

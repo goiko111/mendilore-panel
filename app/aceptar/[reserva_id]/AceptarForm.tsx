@@ -72,7 +72,7 @@ export default function AceptarForm({
       } else {
         setResultado({
           ok: true,
-          message: `Hecho. Se han registrado ${data.aceptaciones?.length ?? 0} aceptaciones. Recibirás confirmación por email.`
+          message: "Hecho. Hemos registrado tu aceptación de las condiciones para tu reserva. Gracias, nos vemos pronto en Casa Mendilore."
         });
       }
     } catch {
