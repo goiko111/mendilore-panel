@@ -5,7 +5,7 @@ import { inicioHistorico } from "@/lib/historico";
 
 const HABITACIONES = ["cala","nube","margarita","lino","limonero","lavanda"];
 
-async function metricsForRange(supabase: any, desdeISO: string, hastaISO: string) {
+async function metricsForRange(supabase: any, desdeISO: string, hastaISO: string, historicoDesde: string | null = null) {
   // Fuente 1: produccion_dia (misma lógica día a día que Métricas → consistencia)
   const { data: dias, error: e1 } = await supabase
     .from("produccion_dia")
@@ -19,7 +19,10 @@ async function metricsForRange(supabase: any, desdeISO: string, hastaISO: string
   const ingresos_extras = (dias || []).reduce((s: number, d: any) => s + Number(d.ingresos_complementarios || 0), 0);
   const ingresos_total = (dias || []).reduce((s: number, d: any) => s + Number(d.ingresos_total || 0), 0);
 
-  const diasRango = Math.max(1, Math.round((new Date(hastaISO).getTime() - new Date(desdeISO).getTime())/86400000) + 1);
+  // Días sin datos cargados (antes de junio de 2025) no cuentan como
+  // disponibles: si no, la ocupación de 2025 salía a la mitad (feedback 21/11).
+  const inicio = historicoDesde && desdeISO < historicoDesde ? historicoDesde : desdeISO;
+  const diasRango = Math.max(1, Math.round((new Date(hastaISO).getTime() - new Date(inicio).getTime())/86400000) + 1);
   const noches_disponibles = HABITACIONES.length * diasRango;
   // Ocupación clásica: noches vendidas dentro del rango / noches disponibles — nunca >100%
   const ocupacion = Math.min(100, (noches_totales / noches_disponibles) * 100);
@@ -49,18 +52,19 @@ export async function GET(req: Request) {
   if (!desde || !hasta) return NextResponse.json({ error: "desde y hasta requeridos (YYYY-MM-DD)" }, { status: 400 });
 
   const supabase = createAdminClient();
-  const actual = await metricsForRange(supabase, desde, hasta);
+  // Histórico cargado desde junio de 2025 (feedback Juan 21/11)
+  const historicoDesde = await inicioHistorico(supabase);
+  const actual = await metricsForRange(supabase, desde, hasta, historicoDesde);
 
   const desdeYA = new Date(desde); desdeYA.setFullYear(desdeYA.getFullYear() - 1);
   const hastaYA = new Date(hasta); hastaYA.setFullYear(hastaYA.getFullYear() - 1);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const anterior = await metricsForRange(supabase, fmt(desdeYA), fmt(hastaYA));
+  const anterior = await metricsForRange(supabase, fmt(desdeYA), fmt(hastaYA), historicoDesde);
 
   const delta = (a: number, b: number) => b === 0 ? (a === 0 ? 0 : 100) : ((a - b) / b) * 100;
 
-  // Histórico cargado desde junio de 2025 (feedback Juan 21/11): si el rango
-  // anterior empieza antes, la comparativa sale contra días vacíos.
-  const historicoDesde = await inicioHistorico(supabase);
+  // Si el rango anterior empieza antes del histórico, la comparativa sale
+  // contra días vacíos: el cliente no muestra la variación.
 
   return NextResponse.json({
     desde, hasta,

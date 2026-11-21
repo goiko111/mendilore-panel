@@ -173,7 +173,7 @@ export function RangoYoYClient() {
               {data.anterior_incompleto
                 ? `El rango anterior (${fechaCorta(data.desde_anterior)} → ${fechaCorta(data.hasta_anterior)}) empieza antes, así que sus cifras salen cortas y no se calcula la variación.`
                 : ""}
-              {data.actual_incompleto ? ` El rango elegido también empieza antes: solo suma desde el ${fechaCorta(data.historico_desde)}.` : ""}
+              {data.actual_incompleto ? ` El rango elegido también empieza antes: lo anterior al ${fechaCorta(data.historico_desde)} no está en el panel y la ocupación solo cuenta los días desde esa fecha.` : ""}
             </div>
           )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

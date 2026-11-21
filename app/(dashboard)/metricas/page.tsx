@@ -150,7 +150,12 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   const totalIngresos = (metricasPeriodo ?? []).reduce((sum, m) => sum + Number(m.ingresos_dia ?? 0), 0);
   const totalAlojamiento = (metricasPeriodo ?? []).reduce((sum, m) => sum + alojamientoDe(m), 0);
   const totalNoches = (metricasPeriodo ?? []).reduce((sum, m) => sum + Number(m.habitaciones_ocupadas ?? 0), 0);
-  const diasPeriodo = Math.max(1, metricasPeriodo?.length ?? 0);
+  // Histórico cargado desde junio de 2025 (feedback Juan 21/11). Los días
+  // anteriores no tienen datos: no cuentan como días disponibles, o la
+  // ocupación de "Año anterior" salía al 32,6 % (713 noches ÷ 365 días) en vez
+  // del 55,5 % real de junio a diciembre.
+  const historicoDesde = await inicioHistorico(supabase);
+  const diasPeriodo = Math.max(1, (metricasPeriodo ?? []).filter((m) => !historicoDesde || String(m.fecha) >= historicoDesde).length);
   const occupancyMedia = Math.min(100, (totalNoches / (HABITACIONES_VALIDAS.length * diasPeriodo)) * 100);
   const adrMedio = totalNoches > 0 ? totalAlojamiento / totalNoches : 0;
 
@@ -172,7 +177,6 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
   // empieza antes, la comparativa sale contra días vacíos (feedback Juan 21/11:
   // "Año actual" daba +63 % porque 2025 no tiene enero a mayo). Sin comparativa
   // en ese caso, y aviso si el propio periodo empieza antes de los datos.
-  const historicoDesde = await inicioHistorico(supabase);
   const anteriorIncompleto = historicoDesde !== null && desdeYA < historicoDesde;
   const periodoIncompleto = historicoDesde !== null && desde < historicoDesde;
   const hayComparativa = totalNochesYA > 0 && !anteriorIncompleto;
@@ -403,7 +407,7 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         </div>
         {periodoIncompleto && historicoDesde && (
           <div className="basis-full text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded px-2.5 py-1.5">
-            Los datos cargados de MisterPlan empiezan en {mesYAnio(historicoDesde)}: este periodo solo suma desde el {fechaCorta(historicoDesde)}. Lo anterior no está en el panel.
+            Los datos cargados de MisterPlan empiezan en {mesYAnio(historicoDesde)}: lo anterior no está en el panel, así que este periodo sale corto. La ocupación solo cuenta los días desde el {fechaCorta(historicoDesde)}.
           </div>
         )}
       </div>
@@ -426,10 +430,10 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `${diasMostrados} días`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "noches vendidas ÷ (6 habitaciones × días del periodo) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `${diasPeriodo} días${diasPeriodo < diasMostrados ? " con datos" : ""}`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "noches vendidas ÷ (6 habitaciones × días del periodo) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
         <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={hayComparativa ? `${varPct(adrMedio, adrYA) ?? "—"} vs año anterior` : `${totalNoches} noches`} tooltip={{ mide: "ADR (Average Daily Rate) — precio medio por habitación vendida en el periodo.", calculo: "ingresos de alojamiento del periodo ÷ noches vendidas. Sin consumos ni extras.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
         <StatCard label="Ingresos del periodo" value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} tooltip={{ mide: "Ingresos producidos en las noches del periodo seleccionado (alojamiento y consumos), con IVA, como el «Importe total» de las facturas de MisterPlan. No es la suma de las facturas del periodo: MisterPlan factura la estancia entera, normalmente el día de salida.", calculo: "Alojamiento repartido entre las noches de cada estancia + consumos en el día en que se hicieron, para las noches del periodo.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
-        <StatCard label="Noches vendidas" value={String(totalNoches)} hint={hayComparativa ? `${varPct(totalNoches, totalNochesYA) ?? "—"} vs año anterior` : `De ${diasMostrados * 6} disponibles`} tooltip={{ mide: "Noches de habitación vendidas en el periodo, hasta hoy.", calculo: "Cada habitación ocupada cada noche del periodo cuenta una noche. Sin anuladas ni no-show. Una estancia que empieza antes o acaba después del periodo solo cuenta sus noches dentro.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="Noches vendidas" value={String(totalNoches)} hint={hayComparativa ? `${varPct(totalNoches, totalNochesYA) ?? "—"} vs año anterior` : `De ${diasPeriodo * 6} disponibles`} tooltip={{ mide: "Noches de habitación vendidas en el periodo, hasta hoy.", calculo: "Cada habitación ocupada cada noche del periodo cuenta una noche. Sin anuladas ni no-show. Una estancia que empieza antes o acaba después del periodo solo cuenta sus noches dentro.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
       </div>
 
       {!hayComparativa && (
