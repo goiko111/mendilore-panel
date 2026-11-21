@@ -1,6 +1,7 @@
 export const runtime = 'edge';
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { inicioHistorico } from "@/lib/historico";
 
 const HABITACIONES = ["cala","nube","margarita","lino","limonero","lavanda"];
 
@@ -57,9 +58,16 @@ export async function GET(req: Request) {
 
   const delta = (a: number, b: number) => b === 0 ? (a === 0 ? 0 : 100) : ((a - b) / b) * 100;
 
+  // Histórico cargado desde junio de 2025 (feedback Juan 21/11): si el rango
+  // anterior empieza antes, la comparativa sale contra días vacíos.
+  const historicoDesde = await inicioHistorico(supabase);
+
   return NextResponse.json({
     desde, hasta,
     desde_anterior: fmt(desdeYA), hasta_anterior: fmt(hastaYA),
+    historico_desde: historicoDesde,
+    anterior_incompleto: historicoDesde !== null && fmt(desdeYA) < historicoDesde,
+    actual_incompleto: historicoDesde !== null && desde < historicoDesde,
     actual, anterior,
     yoy: {
       num: delta(actual.num, anterior.num),

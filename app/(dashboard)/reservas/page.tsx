@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { AccionesReserva } from "./acciones-reserva";
 import { HABITACIONES_VALIDAS , canalLabel, CANALES as CANALES_ALL } from "@/lib/constants";
 import { hoyMadrid } from "@/lib/fechas";
+import { inicioHistorico, mesYAnio } from "@/lib/historico";
 
 export const metadata = { title: "Reservas" };
 
@@ -35,6 +36,8 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const tiempo: Tiempo = (sp.t === "futuras" || sp.t === "pasadas" || sp.t === "todas") ? sp.t : "todas";
   const supabase = await createClient();
+  // Feedback Juan 21/11: decir en la cabecera desde cuándo hay datos cargados
+  const historicoDesde = await inicioHistorico(supabase);
   const today = hoyMadrid();
 
   // Orden inteligente según el filtro temporal
@@ -144,7 +147,7 @@ export default async function ReservasPage({ searchParams }: { searchParams: Pro
     <div>
       <PageHeader
         title="Reservas y exportación"
-        description={`${numReservas} reservas (${reservas.length} habitaciones) · ${totalNoches} noches · ${formatCurrency(totalImporte)} total · ✅ ${formatCurrency(totalCobrado)} cobrado · 🟡 ${formatCurrency(totalPendiente)} pendiente`}
+        description={`${numReservas} reservas (${reservas.length} habitaciones) · ${totalNoches} noches · ${formatCurrency(totalImporte)} total · ✅ ${formatCurrency(totalCobrado)} cobrado · 🟡 ${formatCurrency(totalPendiente)} pendiente${historicoDesde ? ` · datos cargados desde ${mesYAnio(historicoDesde)}` : ""}`}
         actions={
           <Link
             href={exportUrl}

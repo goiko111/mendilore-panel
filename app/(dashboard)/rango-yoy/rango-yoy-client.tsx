@@ -26,6 +26,9 @@ type Response = {
   hasta: string;
   desde_anterior: string;
   hasta_anterior: string;
+  historico_desde?: string | null;
+  anterior_incompleto?: boolean;
+  actual_incompleto?: boolean;
   actual: Metrics;
   anterior: Metrics;
   yoy: Record<string, number>;
@@ -60,9 +63,26 @@ const presets: [string, () => [Date, Date]][] = [
   }],
   ["Últimos 90 días", () => [daysAgo(90), daysAgo(1)]],
   ["Este año", () => [firstOfYear(), new Date()]],
+  // Pedidos por Juan el 21/11
+  ["Mismo mes año anterior", () => {
+    const d = new Date(); d.setDate(1); d.setFullYear(d.getFullYear() - 1);
+    return [firstOfMonth(d), lastOfMonth(d)];
+  }],
+  ["Año anterior", () => {
+    const y = new Date().getFullYear() - 1;
+    return [new Date(y, 0, 1), new Date(y, 11, 31)];
+  }],
 ];
 
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const mesYAnio = (s: string) => `${MESES[Number(s.slice(5, 7)) - 1]} de ${s.slice(0, 4)}`;
+const fechaCorta = (s: string) => `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
+
 function Delta({ value }: { value: number }) {
+  // NaN = el año anterior no tiene datos para todo el rango: sin porcentaje
+  if (!Number.isFinite(value)) {
+    return <span className="text-neutral-500" title="El año anterior no tiene datos cargados para todo el rango">sin datos</span>;
+  }
   if (Math.abs(value) < 0.5) {
     return <span className="text-neutral-500 inline-flex items-center gap-1"><Minus className="size-3" /> —</span>;
   }
@@ -138,13 +158,29 @@ export function RangoYoYClient() {
         </div>
       </div>
 
-      {data && (
+      {data && (() => {
+        // Sin porcentajes si el rango anterior empieza antes de los datos
+        // cargados (feedback Juan 21/11: "Este año" daba +63 % contra un 2025
+        // sin enero a mayo).
+        const yoy = data.anterior_incompleto
+          ? Object.fromEntries(Object.keys(data.yoy).map((k) => [k, NaN]))
+          : data.yoy;
+        return (
         <>
+          {(data.anterior_incompleto || data.actual_incompleto) && data.historico_desde && (
+            <div className="mb-4 text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2">
+              Los datos cargados de MisterPlan empiezan en {mesYAnio(data.historico_desde)}.{" "}
+              {data.anterior_incompleto
+                ? `El rango anterior (${fechaCorta(data.desde_anterior)} → ${fechaCorta(data.hasta_anterior)}) empieza antes, así que sus cifras salen cortas y no se calcula la variación.`
+                : ""}
+              {data.actual_incompleto ? ` El rango elegido también empieza antes: solo suma desde el ${fechaCorta(data.historico_desde)}.` : ""}
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <Kpi label="Reservas" actual={data.actual.num} anterior={data.anterior.num} yoy={data.yoy.num} fmt={n => String(n)} />
-            <Kpi label="Ingresos totales" actual={data.actual.ingresos_total} anterior={data.anterior.ingresos_total} yoy={data.yoy.ingresos_total} fmt={money} />
-            <Kpi label="ADR" actual={data.actual.adr} anterior={data.anterior.adr} yoy={data.yoy.adr} fmt={money} />
-            <Kpi label="Ocupación" actual={data.actual.ocupacion} anterior={data.anterior.ocupacion} yoy={data.yoy.ocupacion} fmt={n => n.toFixed(1) + "%"} />
+            <Kpi label="Reservas (por habitación)" actual={data.actual.num} anterior={data.anterior.num} yoy={yoy.num} fmt={n => String(n)} />
+            <Kpi label="Ingresos totales" actual={data.actual.ingresos_total} anterior={data.anterior.ingresos_total} yoy={yoy.ingresos_total} fmt={money} />
+            <Kpi label="ADR" actual={data.actual.adr} anterior={data.anterior.adr} yoy={yoy.adr} fmt={money} />
+            <Kpi label="Ocupación" actual={data.actual.ocupacion} anterior={data.anterior.ocupacion} yoy={yoy.ocupacion} fmt={n => n.toFixed(1) + "%"} />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -155,9 +191,9 @@ export function RangoYoYClient() {
                   <tr><th className="text-left py-1.5 font-medium">Concepto</th><th className="text-right">Actual</th><th className="text-right">Anterior</th><th className="text-right">YoY</th></tr>
                 </thead>
                 <tbody className="text-sm">
-                  <tr className="border-b border-neutral-100 dark:border-neutral-800/70"><td className="py-1.5">Alojamiento</td><td className="text-right tabular-nums">{money(data.actual.ingresos_aloja)}</td><td className="text-right tabular-nums text-neutral-500">{money(data.anterior.ingresos_aloja)}</td><td className="text-right"><Delta value={data.yoy.ingresos_aloja} /></td></tr>
-                  <tr className="border-b border-neutral-100 dark:border-neutral-800/70"><td className="py-1.5">Extras/complementarios</td><td className="text-right tabular-nums">{money(data.actual.ingresos_extras)}</td><td className="text-right tabular-nums text-neutral-500">{money(data.anterior.ingresos_extras)}</td><td className="text-right"><Delta value={data.yoy.ingresos_extras} /></td></tr>
-                  <tr><td className="py-1.5 font-medium">Total</td><td className="text-right tabular-nums font-medium">{money(data.actual.ingresos_total)}</td><td className="text-right tabular-nums text-neutral-500">{money(data.anterior.ingresos_total)}</td><td className="text-right"><Delta value={data.yoy.ingresos_total} /></td></tr>
+                  <tr className="border-b border-neutral-100 dark:border-neutral-800/70"><td className="py-1.5">Alojamiento</td><td className="text-right tabular-nums">{money(data.actual.ingresos_aloja)}</td><td className="text-right tabular-nums text-neutral-500">{money(data.anterior.ingresos_aloja)}</td><td className="text-right"><Delta value={yoy.ingresos_aloja} /></td></tr>
+                  <tr className="border-b border-neutral-100 dark:border-neutral-800/70"><td className="py-1.5">Extras/complementarios</td><td className="text-right tabular-nums">{money(data.actual.ingresos_extras)}</td><td className="text-right tabular-nums text-neutral-500">{money(data.anterior.ingresos_extras)}</td><td className="text-right"><Delta value={yoy.ingresos_extras} /></td></tr>
+                  <tr><td className="py-1.5 font-medium">Total</td><td className="text-right tabular-nums font-medium">{money(data.actual.ingresos_total)}</td><td className="text-right tabular-nums text-neutral-500">{money(data.anterior.ingresos_total)}</td><td className="text-right"><Delta value={yoy.ingresos_total} /></td></tr>
                 </tbody>
               </table>
             </div>
@@ -181,7 +217,7 @@ export function RangoYoYClient() {
             </div>
           </div>
 
-          <p className="text-xs text-neutral-500 mt-6">Rango actual: {data.actual.dias} días · Rango anterior: {data.anterior.dias} días · Cálculo sobre las 6 habitaciones reales (excluye "Alojamiento completo" y reservas canceladas/no-show).</p>
+          <p className="text-xs text-neutral-500 mt-6">Rango actual: {data.actual.dias} días · Rango anterior: {data.anterior.dias} días · «Reservas» cuenta cada habitación con entrada en el rango, como MisterPlan (una reserva de 3 habitaciones son 3) · Cálculo sobre las 6 habitaciones reales (excluye "Alojamiento completo" y reservas canceladas/no-show).</p>
 
           {prod && !prod.error && prod.dias.length > 0 && (
             <div className="mt-8 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4">
@@ -274,7 +310,8 @@ export function RangoYoYClient() {
             </div>
           )}
         </>
-      )}
+        );
+      })()}
     </div>
   );
 }

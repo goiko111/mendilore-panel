@@ -11,6 +11,7 @@ import { formatCurrency, formatPercent, formatDate } from "@/lib/utils";
 import { MetricasChart } from "./chart";
 import { HABITACIONES_VALIDAS, canalLabel } from "@/lib/constants";
 import { KPITooltip } from "@/components/kpi-tooltip";
+import { inicioHistorico, mesYAnio, fechaCorta } from "@/lib/historico";
 
 export const metadata = { title: "Métricas" };
 
@@ -45,10 +46,16 @@ function calcularAtajos(today: Date): { key: string; label: string; desde: strin
   // Mes y año actual
   const m = today.getMonth(); // 0-indexed
   const ultimoDiaMes = new Date(Date.UTC(año, m + 1, 0)).getUTCDate();
+  // El mismo mes un año antes (febrero de año bisiesto incluido)
+  const ultimoDiaMesAnt = new Date(Date.UTC(año - 1, m + 1, 0)).getUTCDate();
 
+  // "Año anterior" y "Mismo mes año anterior": los dos atajos que pidió Juan
+  // el 21/11 para Métricas y la Comparativa YoY.
   return [
     { key: "mes", label: "Mes actual", desde: fmt(año, m + 1, 1), hasta: fmt(año, m + 1, ultimoDiaMes) },
     { key: "anio", label: "Año actual", desde: fmt(año, 1, 1), hasta: fmt(año, 12, 31) },
+    { key: "mes_ant", label: "Mismo mes año anterior", desde: fmt(año - 1, m + 1, 1), hasta: fmt(año - 1, m + 1, ultimoDiaMesAnt) },
+    { key: "anio_ant", label: "Año anterior", desde: fmt(año - 1, 1, 1), hasta: fmt(año - 1, 12, 31) },
     { key: "verano", label: `Verano ${veranoY}`, desde: fmt(veranoY, 7, 1), hasta: fmt(veranoY, 8, 31) },
     { key: "navidad", label: `Navidad ${navY}`, desde: fmt(navY, 12, 22), hasta: fmt(navY + 1, 1, 6) },
     { key: "ss", label: `Sem. Santa ${ssY}`, desde: fmt(ssY, 3, 20), hasta: fmt(ssY, 4, 12) },
@@ -161,7 +168,14 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
     const sign = d > 0 ? "+" : "";
     return `${sign}${d.toFixed(1)}%`;
   }
-  const hayComparativa = totalNochesYA > 0;
+  // Histórico cargado desde junio de 2025: si el mismo periodo del año anterior
+  // empieza antes, la comparativa sale contra días vacíos (feedback Juan 21/11:
+  // "Año actual" daba +63 % porque 2025 no tiene enero a mayo). Sin comparativa
+  // en ese caso, y aviso si el propio periodo empieza antes de los datos.
+  const historicoDesde = await inicioHistorico(supabase);
+  const anteriorIncompleto = historicoDesde !== null && desdeYA < historicoDesde;
+  const periodoIncompleto = historicoDesde !== null && desde < historicoDesde;
+  const hayComparativa = totalNochesYA > 0 && !anteriorIncompleto;
 
   // ===========================
   // KPIs MrPlan: Lead time, ALOS, Cancel rate, Pace, Channel mix
@@ -387,6 +401,11 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
         <div className="text-[11px] text-muted-foreground self-center">
           Rango: <strong className="text-foreground">{desde}</strong> → <strong className="text-foreground">{hasta}</strong> ({lookbackDays} días{diasMostrados < lookbackDays ? `, ${diasMostrados} ya pasados` : ""})
         </div>
+        {periodoIncompleto && historicoDesde && (
+          <div className="basis-full text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 rounded px-2.5 py-1.5">
+            Los datos cargados de MisterPlan empiezan en {mesYAnio(historicoDesde)}: este periodo solo suma desde el {fechaCorta(historicoDesde)}. Lo anterior no está en el panel.
+          </div>
+        )}
       </div>
 
       {/* Nav de secciones — Bloque 8 */}
@@ -409,13 +428,15 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Ocupación media" value={formatPercent(occupancyMedia)} hint={hayComparativa ? `${varPct(occupancyMedia, occupancyYA) ?? "—"} vs año anterior` : `${diasMostrados} días`} tooltip={{ mide: "Porcentaje medio de habitaciones ocupadas en el periodo seleccionado.", calculo: "noches vendidas ÷ (6 habitaciones × días del periodo) × 100", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
         <StatCard label="ADR medio" value={formatCurrency(adrMedio)} hint={hayComparativa ? `${varPct(adrMedio, adrYA) ?? "—"} vs año anterior` : `${totalNoches} noches`} tooltip={{ mide: "ADR (Average Daily Rate) — precio medio por habitación vendida en el periodo.", calculo: "ingresos de alojamiento del periodo ÷ noches vendidas. Sin consumos ni extras.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
-        <StatCard label="Ingresos del periodo" value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} tooltip={{ mide: "Ingresos producidos en las noches del periodo seleccionado (alojamiento y consumos).", calculo: "Alojamiento repartido entre las noches de cada estancia + consumos en el día en que se hicieron, para las noches del periodo.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
+        <StatCard label="Ingresos del periodo" value={formatCurrency(totalIngresos)} hint={hayComparativa ? `${varPct(totalIngresos, totalIngresosYA) ?? "—"} vs año anterior` : "Suma diaria"} tooltip={{ mide: "Ingresos producidos en las noches del periodo seleccionado (alojamiento y consumos), con IVA, como el «Importe total» de las facturas de MisterPlan. No es la suma de las facturas del periodo: MisterPlan factura la estancia entera, normalmente el día de salida.", calculo: "Alojamiento repartido entre las noches de cada estancia + consumos en el día en que se hicieron, para las noches del periodo.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
         <StatCard label="Noches vendidas" value={String(totalNoches)} hint={hayComparativa ? `${varPct(totalNoches, totalNochesYA) ?? "—"} vs año anterior` : `De ${diasMostrados * 6} disponibles`} tooltip={{ mide: "Noches de habitación vendidas en el periodo, hasta hoy.", calculo: "Cada habitación ocupada cada noche del periodo cuenta una noche. Sin anuladas ni no-show. Una estancia que empieza antes o acaba después del periodo solo cuenta sus noches dentro.", origen: "MisterPlan", sistemas: "MrPlan → robot → BD del panel" }} />
       </div>
 
       {!hayComparativa && (
         <div className="text-xs text-muted-foreground italic mb-6 px-1">
-          Comparativa año anterior aparecerá cuando haya histórico de 365+ días en BD.
+          {anteriorIncompleto && historicoDesde
+            ? `Sin comparativa con el año anterior: el mismo periodo un año antes empieza el ${fechaCorta(desdeYA)} y los datos cargados empiezan en ${mesYAnio(historicoDesde)}.`
+            : "Sin datos del año anterior para este periodo."}
         </div>
       )}
 
@@ -511,7 +532,9 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
               <div className="text-xs">
                 <div className="text-sm font-semibold text-foreground mb-1">Sin datos del año anterior para este periodo</div>
                 <p className="text-muted-foreground leading-relaxed">
-                  Los datos cargados empiezan en junio de 2025: para fechas anteriores no hay con qué comparar. También pasa si el periodo elegido todavía no ha empezado.
+                  {anteriorIncompleto && historicoDesde
+                    ? `El mismo periodo un año antes (${fechaCorta(desdeYA)} → ${fechaCorta(hastaYA)}) empieza antes de los datos cargados, que arrancan en ${mesYAnio(historicoDesde)}. Compararlo daría una subida que no es real.`
+                    : "No hay noches del año anterior en estas fechas. Pasa también si el periodo elegido todavía no ha empezado."}
                 </p>
               </div>
             </div>
@@ -556,8 +579,16 @@ export default async function MetricasPage({ searchParams }: { searchParams: Pro
       {channelMix.length > 0 && totalChannelRevenue > 0 && (
         <div className="bg-card border border-border rounded-xl p-5 mb-6">
           <h2 className="text-base font-semibold text-foreground mb-1 flex items-center">Reparto por canal — periodo elegido<KPITooltip mide="Por canal de venta (Booking, web propia, teléfono…): reservas, noches vendidas dentro del periodo, ingresos de alojamiento de esas noches y precio medio por noche." calculo="Solo las noches que caen en el periodo. Alojamiento de cada estancia ÷ sus noches × noches dentro del periodo (como Métricas). Sin consumos. Una reserva de varias habitaciones cuenta una vez; sus noches, por habitación. Sin anuladas." origen="MisterPlan — el campo canal de cada reserva" sistemas="MrPlan → robot → BD del panel · indica de dónde viene el dinero" /></h2>
-          <p className="text-xs text-muted-foreground mb-4">
+          <p className="text-xs text-muted-foreground mb-1">
             {desde} → {hastaCanal} · {formatCurrency(totalChannelRevenue)} de alojamiento · {totalChannelNoches} noches · {totalChannelReservas} reservas
+          </p>
+          {/* Feedback Juan 21/11: los canales no sumaban "Ingresos del periodo".
+              Los canales son solo alojamiento; la tarjeta suma también los
+              consumos. Se pone la cuenta para que cuadre a la vista. Consumos =
+              ingresos − alojamiento de los canales: así suma exacto (la vista
+              redondea cada día al céntimo y deja unos céntimos de diferencia). */}
+          <p className="text-xs text-muted-foreground mb-4">
+            Más {formatCurrency(Math.max(0, totalIngresos - totalChannelRevenue))} de consumos, que no se reparten por canal: {formatCurrency(totalChannelRevenue)} + {formatCurrency(Math.max(0, totalIngresos - totalChannelRevenue))} = <strong className="text-foreground">{formatCurrency(totalIngresos)}</strong>, la cifra de «Ingresos del periodo».
           </p>
           <div className="space-y-3">
             {channelMix.map((c) => {
