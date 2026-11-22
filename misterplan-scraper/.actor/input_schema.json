@@ -35,19 +35,19 @@
     "monthsAhead": {
       "title": "Meses a escrapear",
       "type": "integer",
-      "description": "Número de meses (a partir del actual) a recorrer en el Planning",
+      "description": "Meses a recorrer desde el actual. Negativo = la pasada acaba en el pasado (para cargar histórico antiguo sin releer lo reciente: monthsBack 46 + monthsAhead -22 = de enero de 2023 a diciembre de 2024)",
       "default": 4,
-      "minimum": 1,
+      "minimum": -48,
       "maximum": 12,
       "editor": "number"
     },
     "monthsBack": {
       "title": "Meses hacia atrás",
       "type": "integer",
-      "description": "Meses pasados a incluir (útil en el primer run para histórico)",
+      "description": "Meses pasados a incluir (útil para cargar histórico; 46 = desde enero de 2023 si se lanza en noviembre de 2026)",
       "default": 0,
       "minimum": 0,
-      "maximum": 24,
+      "maximum": 60,
       "editor": "number"
     },
     "headless": {
